@@ -1,0 +1,1 @@
+{"content":"BD-rate requires overlapping rate-distortion curves to interpolate; when compared methods' bitrate ranges don't overlap, standard practice is to evaluate on the intersecting sub-range only or add extra rate points, not to extrapolate.","source":"web","provider":"websearch","confidence":"LOW","fetched_at":"2026-09-07T16:46:49.607Z","ttl":86400000,"kind":"web"}
