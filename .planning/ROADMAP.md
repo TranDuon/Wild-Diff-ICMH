@@ -1,5 +1,7 @@
 # Roadmap: Wild-Diff-ICMH
 
+Kế hoạch triển khai từng bước theo tuần, người phụ trách, cổng kiểm tra và ma trận đối chứng: [CAMERA_TRAP_FINE_TUNING_PLAN.md](CAMERA_TRAP_FINE_TUNING_PLAN.md) (16/09/2026).
+
 ## Overview
 
 Dự án đi từ một codebase Diff-ICMH đã chạy được nhưng **chưa có một byte dữ liệu bẫy ảnh nào**, tới một báo cáo kỹ thuật chứng minh H2 (ROI-weighted loss) hoặc H3 (domain-aware Tag Guidance Module) đóng góp vượt trên fine-tuning thuần (H1). Vì ngân sách compute thật (~50h L4-equivalent trên Colab Pro) nhỏ hơn giả định kế hoạch gốc 5-6 lần, roadmap này áp dụng **MVP theo chiều dọc (vertical slice)**: Phase 1 không xây "toàn bộ tầng dữ liệu rồi toàn bộ hạ tầng rồi mới thí nghiệm", mà chứng minh **một lát cắt mỏng chạy được đầu-cuối** — một tập ảnh mẫu nhỏ đi từ tải về, qua split an toàn theo site, qua một lượt train ngắn, tới decode và ghi một dòng `results.jsonl` — trước khi tiêu bất kỳ giờ GPU nghiêm túc nào. Các phase sau đó **mở rộng** lát cắt này về chiều rộng (toàn bộ 60K ảnh, harness eval đầy đủ) rồi chiều sâu (H1 → H2 → H3), tận dụng việc H3 tầng L1/L2 **không cần training** để chạy song song với các phase tốn GPU thay vì xếp hàng sau chúng. Hai rủi ro có thể làm dừng dự án — rò rỉ dữ liệu theo site/burst và cạn ngân sách compute-unit giữa chừng — được gắn thành cổng chặn cứng (hard gate) ngay từ Phase 1, không phải điều khoản ghi chú.
