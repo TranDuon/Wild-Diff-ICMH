@@ -1,0 +1,128 @@
+{
+  "args": {
+    "kga_empty_size": 50,
+    "kga_nonempty_size": 400,
+    "max_per_sequence": 1,
+    "night_fraction": null,
+    "train_size": 4000,
+    "val_site_fraction": 0.1,
+    "val_size": 400
+  },
+  "excluded": {
+    "snapshot_kgalagadi": {
+      "human_label": 135,
+      "illumination_none": 0,
+      "no_annotation": 0
+    },
+    "snapshot_serengeti": {
+      "illumination_none": 1184,
+      "person_or_vehicle_box": 465
+    }
+  },
+  "generator": "tools/data/build_manifests.py",
+  "kga_sites_covered": 20,
+  "kga_sites_total": 20,
+  "manifests": {
+    "kgalagadi_test.jsonl": {
+      "test": {
+        "day": 372,
+        "images": 450,
+        "night": 78,
+        "sequences": 338,
+        "sites": 20,
+        "species_counts": {
+          "aardvarkantbear": 1,
+          "birdofprey": 2,
+          "birdother": 64,
+          "bustardkori": 14,
+          "caracal": 3,
+          "catafricanwild": 2,
+          "duikercommongrey": 14,
+          "eland": 3,
+          "foxcape": 8,
+          "gemsbokoryx": 178,
+          "hartebeestred": 2,
+          "honeybadger": 3,
+          "hyenabrown": 4,
+          "hyenaspotted": 1,
+          "jackalblackbacked": 31,
+          "kudu": 3,
+          "leopard": 8,
+          "lionfemale": 1,
+          "meerkatsuricate": 2,
+          "ostrich": 13,
+          "porcupine": 1,
+          "reptilesamphibians": 1,
+          "rodent": 3,
+          "secretarybird": 3,
+          "steenbok": 32,
+          "wildebeestblue": 5
+        },
+        "subset_counts": {
+          "empty_check": 50,
+          "nonempty": 400
+        },
+        "total_boxes": 0,
+        "zero_box_images": 0
+      }
+    },
+    "serengeti_trainval.jsonl": {
+      "train": {
+        "day": 2670,
+        "images": 4000,
+        "night": 1330,
+        "sequences": 4000,
+        "sites": 203,
+        "subset_counts": {
+          "bbox_subset": 4000
+        },
+        "total_boxes": 6881,
+        "zero_box_images": 243
+      },
+      "val": {
+        "day": 242,
+        "images": 400,
+        "night": 158,
+        "sequences": 400,
+        "sites": 22,
+        "subset_counts": {
+          "bbox_subset": 400
+        },
+        "total_boxes": 651,
+        "zero_box_images": 15
+      }
+    }
+  },
+  "mapping_notes": [],
+  "output_sha256": {
+    "kgalagadi_test.jsonl": "1b90c14cfc06e410a6f3f582753646eca254b534ae82cf08bd8b9c1c283c067e",
+    "serengeti_trainval.jsonl": "9c39bc1dba1c9a11f267d5fc1fee772a1f3f1c4a7acd784ddbd410aab96b6c0a"
+  },
+  "seed": 20260916,
+  "shortfalls": {},
+  "sources": {
+    "snapshot_kgalagadi": {
+      "info": {
+        "contributor": "Snapshot Safari",
+        "date_created": "2019",
+        "description": "Camera trap data from the Snapshot Kgalagai program",
+        "version": "1.0"
+      },
+      "member_name": "SnapshotKgalagai_S1_v1.0.json",
+      "repo_relative_path": "data/raw/snapshot_kgalagadi/SnapshotKgalagadi_S1_v1.0.json.zip",
+      "sha256": "eccad79e09a6afa6e083b7d15a051f5b6443263ca894bf0882fb8691b8877dee"
+    },
+    "snapshot_serengeti": {
+      "info": {
+        "contributor": "Sara Beery, this version updated by Siyu Yang",
+        "date_created": "2019-09-03",
+        "description": "Reprocessed bounding box annotations for Snapshot Serengeti seasons 1 to 6, with remaining small insect and distant bird bboxes smaller than 400 sq pixel excluded manually.",
+        "version": "20190903",
+        "year": 2019
+      },
+      "member_name": "SnapshotSerengetiBboxes_20190903.json",
+      "repo_relative_path": "data/raw/snapshot_serengeti/bboxes.json.zip",
+      "sha256": "1fe0ce97432e0b847fd1317e150921fec54ac77bd7cd834f6553e375d82a051b"
+    }
+  }
+}
