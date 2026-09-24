@@ -18,12 +18,12 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 
 ### Data — Nền tảng dữ liệu bẫy ảnh
 
-- [ ] **DATA-01**: Corpus ảnh bẫy ảnh tải về và chuẩn hoá từ LILA BC — subset Snapshot Serengeti có bounding box, cộng Caltech Camera Traps giữ **hoàn toàn ngoài tập train** làm site mới
-- [ ] **DATA-02**: Split train/val/test tách theo **site VÀ sequence/burst**, không phải theo ảnh
-- [ ] **DATA-03**: `split_check.py` assert không có site hoặc burst nào xuất hiện ở hai split, và **chạy tự động trước mọi job training/eval** đọc file split (gate, không phải script chạy tay)
+- [ ] **DATA-01**: Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có nhãn người được tải và chuẩn hoá; Snapshot Serengeti chỉ dùng đánh giá bổ sung
+- [ ] **DATA-02**: Mỗi site Kgalagadi được chia train/val/test 70/15/15 theo **sequence/burst**, không phải theo ảnh; một model được fine-tune riêng cho từng site giống bài so sánh
+- [ ] **DATA-03**: `split_check.py` assert không có sequence/burst nào xuất hiện ở hai split và **chạy tự động trước mọi job training/eval** đọc file split (site được phép xuất hiện ở cả ba split theo protocol per-site)
 - [ ] **DATA-04**: Thống kê miền đo được trên chính corpus của nhóm — tỉ lệ ảnh rỗng, tỉ lệ ngày RGB vs đêm IR, phân bố diện tích bbox so với khung hình
 - [ ] **DATA-05**: Xác minh metadata `datetime` và `location` còn dùng được — kiểm tra EXIF trên 100 ảnh đầu, fallback sang trường JSON của LILA nếu EXIF bị strip
-- [ ] **DATA-06**: ROI mask sinh bằng SAM 2.1 từ bbox ground-truth cho tập train, kèm histogram độ phủ mask để xác nhận mask hợp lệ
+- [ ] **DATA-06**: ROI mask Kgalagadi sinh từ bbox MegaDetector với detector/ngưỡng cố định, kèm histogram độ phủ mask; ghi rõ đây là pseudo-label
 - [ ] **DATA-07**: Corpus đóng gói dạng shard (tar/webdataset) và copy về đĩa local của session lúc khởi động, không đọc trực tiếp từng file nhỏ trên Drive
 
 ### Infra — Hạ tầng training và quản lý ngân sách compute
@@ -79,7 +79,7 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **ANLS-01**: RD curve **3 điểm bitrate** (λ_rate = 2, 8, 32) cho các cấu hình gốc / +H1 / +full, trên detection và species classification
 - [ ] **ANLS-02**: BD-rate tính bằng `bjontegaard`, dùng fit bậc hai cho 3 điểm và **ghi rõ đây là fallback** so với quy ước 4 điểm của JVET
 - [ ] **ANLS-03**: Bảng ablation cộng dồn (gốc → +H1 → +H1+H2 → +full) với bootstrap CI ở **mọi ô**, không còn ô trống
-- [ ] **ANLS-04**: Bảng cái giá của chuyên biệt hoá trên **cả hai trục** — miền tổng quát (COCO/Kodak) và site mới giữ ngoài (CCT)
+- [ ] **ANLS-04**: Bảng cái giá của chuyên biệt hoá trên **cả hai trục** — miền tổng quát (COCO/Kodak) và camera-trap bổ sung (Snapshot Serengeti)
 - [ ] **ANLS-05**: Trần vật lý của VAE chứng minh bằng **lập luận Nyquist cộng thí nghiệm FFT** trên ảnh gốc vs ảnh decode, không cần model re-ID
 - [ ] **ANLS-06**: Anchor VTM/BPG chạy nền trên CPU để đặt kết quả vào bối cảnh, không cạnh tranh compute unit với training
 - [ ] **ANLS-07**: Failure taxonomy — phân loại các dạng lỗi quan sát được kèm ví dụ ảnh, không chỉ chọn ảnh đẹp

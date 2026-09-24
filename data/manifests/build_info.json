@@ -1,7 +1,8 @@
 {
   "args": {
-    "kga_empty_size": 50,
-    "kga_nonempty_size": 400,
+    "kga_test_fraction": 0.15,
+    "kga_train_fraction": 0.7,
+    "kga_val_fraction": 0.15,
     "max_per_sequence": 1,
     "night_fraction": null,
     "train_size": 4000,
@@ -13,90 +14,225 @@
       "human_label": 135,
       "illumination_none": 0,
       "no_annotation": 0
-    },
-    "snapshot_serengeti": {
-      "illumination_none": 1184,
-      "person_or_vehicle_box": 465
     }
   },
   "generator": "tools/data/build_manifests.py",
+  "kga_site_split_sequences": {
+    "KGA:A01": {
+      "test": 53,
+      "train": 244,
+      "val": 52
+    },
+    "KGA:A02": {
+      "test": 5,
+      "train": 22,
+      "val": 5
+    },
+    "KGA:A03": {
+      "test": 2,
+      "train": 7,
+      "val": 1
+    },
+    "KGA:A04": {
+      "test": 15,
+      "train": 70,
+      "val": 15
+    },
+    "KGA:A05": {
+      "test": 29,
+      "train": 134,
+      "val": 29
+    },
+    "KGA:A06": {
+      "test": 42,
+      "train": 194,
+      "val": 41
+    },
+    "KGA:A07": {
+      "test": 11,
+      "train": 49,
+      "val": 10
+    },
+    "KGA:A08": {
+      "test": 21,
+      "train": 100,
+      "val": 21
+    },
+    "KGA:A09": {
+      "test": 11,
+      "train": 50,
+      "val": 11
+    },
+    "KGA:A10": {
+      "test": 2,
+      "train": 9,
+      "val": 2
+    },
+    "KGA:A11": {
+      "test": 15,
+      "train": 72,
+      "val": 15
+    },
+    "KGA:B01": {
+      "test": 7,
+      "train": 33,
+      "val": 7
+    },
+    "KGA:B02": {
+      "test": 24,
+      "train": 114,
+      "val": 24
+    },
+    "KGA:B03": {
+      "test": 3,
+      "train": 15,
+      "val": 3
+    },
+    "KGA:B04": {
+      "test": 37,
+      "train": 170,
+      "val": 36
+    },
+    "KGA:B05": {
+      "test": 13,
+      "train": 60,
+      "val": 13
+    },
+    "KGA:B06": {
+      "test": 197,
+      "train": 918,
+      "val": 196
+    },
+    "KGA:B07": {
+      "test": 13,
+      "train": 59,
+      "val": 12
+    },
+    "KGA:B08": {
+      "test": 6,
+      "train": 27,
+      "val": 6
+    },
+    "KGA:B09": {
+      "test": 32,
+      "train": 150,
+      "val": 32
+    }
+  },
   "kga_sites_covered": 20,
   "kga_sites_total": 20,
   "manifests": {
-    "kgalagadi_test.jsonl": {
+    "kgalagadi_site_split.jsonl": {
       "test": {
-        "day": 372,
-        "images": 450,
-        "night": 78,
-        "sequences": 338,
+        "day": 1458,
+        "images": 1532,
+        "night": 74,
+        "sequences": 538,
         "sites": 20,
         "species_counts": {
           "aardvarkantbear": 1,
-          "birdofprey": 2,
-          "birdother": 64,
-          "bustardkori": 14,
-          "caracal": 3,
-          "catafricanwild": 2,
-          "duikercommongrey": 14,
-          "eland": 3,
-          "foxcape": 8,
-          "gemsbokoryx": 178,
-          "hartebeestred": 2,
-          "honeybadger": 3,
-          "hyenabrown": 4,
-          "hyenaspotted": 1,
-          "jackalblackbacked": 31,
-          "kudu": 3,
-          "leopard": 8,
-          "lionfemale": 1,
-          "meerkatsuricate": 2,
-          "ostrich": 13,
-          "porcupine": 1,
-          "reptilesamphibians": 1,
-          "rodent": 3,
+          "birdofprey": 1,
+          "birdother": 54,
+          "bustardkori": 15,
+          "caracal": 1,
+          "catafricanwild": 3,
+          "duikercommongrey": 3,
+          "eland": 7,
+          "foxcape": 1,
+          "gemsbokoryx": 198,
+          "hyenabrown": 2,
+          "jackalblackbacked": 16,
+          "kudu": 6,
+          "meerkatsuricate": 3,
+          "ostrich": 27,
           "secretarybird": 3,
-          "steenbok": 32,
-          "wildebeestblue": 5
+          "steenbok": 22,
+          "wildebeestblue": 4
         },
         "subset_counts": {
-          "empty_check": 50,
-          "nonempty": 400
+          "empty": 1168,
+          "nonempty": 364
         },
         "total_boxes": 0,
         "zero_box_images": 0
-      }
-    },
-    "serengeti_trainval.jsonl": {
+      },
       "train": {
-        "day": 2670,
-        "images": 4000,
-        "night": 1330,
-        "sequences": 4000,
-        "sites": 203,
-        "subset_counts": {
-          "bbox_subset": 4000
+        "day": 6951,
+        "images": 7191,
+        "night": 240,
+        "sequences": 2497,
+        "sites": 20,
+        "species_counts": {
+          "birdofprey": 9,
+          "birdother": 222,
+          "bustardkori": 72,
+          "caracal": 5,
+          "catafricanwild": 4,
+          "duikercommongrey": 17,
+          "eland": 16,
+          "foxbateared": 1,
+          "foxcape": 17,
+          "gemsbokoryx": 979,
+          "harecape": 1,
+          "hartebeestred": 13,
+          "honeybadger": 4,
+          "hyenabrown": 6,
+          "jackalblackbacked": 49,
+          "kudu": 12,
+          "leopard": 9,
+          "ostrich": 93,
+          "porcupine": 2,
+          "reptilesamphibians": 3,
+          "secretarybird": 18,
+          "steenbok": 87,
+          "wildebeestblue": 27
         },
-        "total_boxes": 6881,
-        "zero_box_images": 243
+        "subset_counts": {
+          "empty": 5561,
+          "nonempty": 1630
+        },
+        "total_boxes": 0,
+        "zero_box_images": 0
       },
       "val": {
-        "day": 242,
-        "images": 400,
-        "night": 158,
-        "sequences": 400,
-        "sites": 22,
-        "subset_counts": {
-          "bbox_subset": 400
+        "day": 1437,
+        "images": 1499,
+        "night": 62,
+        "sequences": 531,
+        "sites": 20,
+        "species_counts": {
+          "birdother": 48,
+          "bustardkori": 15,
+          "catafricanwild": 3,
+          "cheetah": 3,
+          "duikercommongrey": 1,
+          "eland": 7,
+          "foxcape": 1,
+          "gemsbokoryx": 201,
+          "honeybadger": 1,
+          "hyenabrown": 3,
+          "hyenaspotted": 1,
+          "jackalblackbacked": 18,
+          "lionfemale": 1,
+          "ostrich": 16,
+          "porcupine": 1,
+          "rodent": 3,
+          "secretarybird": 6,
+          "steenbok": 13,
+          "wildebeestblue": 6
         },
-        "total_boxes": 651,
-        "zero_box_images": 15
+        "subset_counts": {
+          "empty": 1157,
+          "nonempty": 342
+        },
+        "total_boxes": 0,
+        "zero_box_images": 0
       }
     }
   },
   "mapping_notes": [],
   "output_sha256": {
-    "kgalagadi_test.jsonl": "1b90c14cfc06e410a6f3f582753646eca254b534ae82cf08bd8b9c1c283c067e",
-    "serengeti_trainval.jsonl": "9c39bc1dba1c9a11f267d5fc1fee772a1f3f1c4a7acd784ddbd410aab96b6c0a"
+    "kgalagadi_site_split.jsonl": "1bfb1d676511005d8a232565dbc4c3ccebd9bb2314fa291bcfd18a8acbccfacd"
   },
   "seed": 20260916,
   "shortfalls": {},
@@ -111,18 +247,6 @@
       "member_name": "SnapshotKgalagai_S1_v1.0.json",
       "repo_relative_path": "data/raw/snapshot_kgalagadi/SnapshotKgalagadi_S1_v1.0.json.zip",
       "sha256": "eccad79e09a6afa6e083b7d15a051f5b6443263ca894bf0882fb8691b8877dee"
-    },
-    "snapshot_serengeti": {
-      "info": {
-        "contributor": "Sara Beery, this version updated by Siyu Yang",
-        "date_created": "2019-09-03",
-        "description": "Reprocessed bounding box annotations for Snapshot Serengeti seasons 1 to 6, with remaining small insect and distant bird bboxes smaller than 400 sq pixel excluded manually.",
-        "version": "20190903",
-        "year": 2019
-      },
-      "member_name": "SnapshotSerengetiBboxes_20190903.json",
-      "repo_relative_path": "data/raw/snapshot_serengeti/bboxes.json.zip",
-      "sha256": "1fe0ce97432e0b847fd1317e150921fec54ac77bd7cd834f6553e375d82a051b"
     }
   }
 }

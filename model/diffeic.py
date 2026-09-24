@@ -2,6 +2,7 @@ import time
 import torch
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 
 from typing import Dict, Mapping, Any
 
@@ -11,7 +12,6 @@ import math
 import pyiqa
 import einops
 import numpy as np
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from utils.utils import *
 
 from ldm.modules.diffusionmodules.util import (
@@ -36,6 +36,7 @@ from ldm.modules.diffusionmodules.openaimodel import (
     TimestepBlock
 )
 from ldm.util import log_txt_as_img, exists, instantiate_from_config, default
+from utils.common import frozen_module
 
 class CDDM(nn.Module):
     def __init__(
@@ -619,6 +620,13 @@ class DiffEIC(LatentDiffusion):
         calculate_metrics: Mapping[str, Any],
         c_ucg_rate: float = 0.1,
         c_cfg_scale: float = 7.5,
+        roi_loss_enabled: bool = False,
+        roi_weight: float = 4.0,
+        roi_background_weight: float = 1.0,
+        roi_semantic_enabled: bool = False,
+        validation_sample_steps: int = 20,
+        compact_checkpoint: bool = True,
+        external_text_conditioning: bool = False,
         *args, 
         **kwargs
     ) -> "DiffEIC":
@@ -629,6 +637,16 @@ class DiffEIC(LatentDiffusion):
         self.preprocess_tag_model = instantiate_from_config(preprocess_tag_config)
         self.c_ucg_rate = c_ucg_rate
         self.c_cfg_scale = c_cfg_scale
+        self.roi_loss_enabled = roi_loss_enabled
+        self.roi_weight = float(roi_weight)
+        self.roi_background_weight = float(roi_background_weight)
+        self.roi_semantic_enabled = roi_semantic_enabled
+        self.validation_sample_steps = int(validation_sample_steps)
+        self.compact_checkpoint = compact_checkpoint
+        self.external_text_conditioning = external_text_conditioning
+        if self.roi_weight <= 0 or self.roi_background_weight <= 0:
+            raise ValueError("ROI and background weights must be positive")
+        self._validation_outputs = []
         if sync_path is not None:
             self.sync_control_weights_from_base_checkpoint(sync_path, synch_control=synch_control)
         if ckpt_path_pre is not None:
@@ -636,12 +654,17 @@ class DiffEIC(LatentDiffusion):
 
         self.control_key = control_key
         self.sd_locked = sd_locked
+        if self.sd_locked:
+            # Excluding SD from the optimizer is not enough: leaving
+            # requires_grad=True retains parameter gradients, wastes VRAM and
+            # makes compact checkpoints accidentally include the whole UNet.
+            frozen_module(self.model.diffusion_model)
 
         self.learning_rate = learning_rate
         self.aux_learning_rate = aux_learning_rate
-        self.l_bpp_weight = l_bpp_weight
-        self.l_guide_weight = l_guide_weight
-        self.l_semantic_weight = l_semantic_weight
+        self.l_bpp_weight = float(l_bpp_weight)
+        self.l_guide_weight = float(l_guide_weight)
+        self.l_semantic_weight = float(l_semantic_weight)
         assert sl_t_type in ['random', 'zero'] or sl_t_type.startswith('random_'), \
             "sl_t_type should be 'random' or 'zero' or 'random_x_x' where x_x indicates the range."
         assert sl_metric in ['cos', 'normalized_l2'], "sl_metric should be 'cos' or 'normalized_l2'"
@@ -651,7 +674,9 @@ class DiffEIC(LatentDiffusion):
         self.sl_loc = sl_loc
 
         self.calculate_metrics = calculate_metrics
-        self.metric_funcs = {}
+        # Register metrics as child modules so Lightning moves LPIPS and the
+        # other metric networks to the same device as the codec.
+        self.metric_funcs = torch.nn.ModuleDict()
         for _, opt in calculate_metrics.items(): 
             mopt = opt.copy()
             name = mopt.pop('type', None)
@@ -729,7 +754,10 @@ class DiffEIC(LatentDiffusion):
         return tag_ids
     
     @torch.no_grad()
-    def apply_condition_compress(self, control, stream_path, H, W, tag_ids=None, tag_codelength=13):
+    def apply_condition_compress(
+        self, control, stream_path, H, W, tag_ids=None, tag_codelength=13,
+        domain_metadata_codes=None,
+    ):
         ref = self.encode_first_stage(control * 2 - 1).mode() * self.scale_factor
         out = self.preprocess_model.compress(control, ref)
         shape = out["shape"]
@@ -752,13 +780,21 @@ class DiffEIC(LatentDiffusion):
                 write_uints(f, (len(encoded_tags),))
                 # Write encoded tags
                 write_bytes(f, encoded_tags)
+            if domain_metadata_codes is not None:
+                codes = bytes(int(code) & 0xFF for code in domain_metadata_codes)
+                if len(codes) != control.shape[0]:
+                    raise ValueError("one domain metadata code is required per image")
+                write_bytes(f, codes)
         
         size = filesize(stream_path)
         bpp = float(size) * 8 / (H * W)
         return bpp
 
     @torch.no_grad()
-    def apply_condition_decompress(self, stream_path, dec_tag_ids=False):
+    def apply_condition_decompress(
+        self, stream_path, dec_tag_ids=False, dec_domain_metadata=False,
+        domain_metadata_count=1,
+    ):
         with Path(stream_path).open("rb") as f:
             strings, shape = read_body(f)
             
@@ -780,11 +816,18 @@ class DiffEIC(LatentDiffusion):
                 except:
                     # If tag data is not available, return None
                     decoded_tag_ids = None
+            domain_metadata_codes = None
+            if dec_domain_metadata:
+                domain_metadata_codes = list(read_bytes(f, int(domain_metadata_count)))
         
         c_latent = self.preprocess_model.decompress(strings, shape)
         
+        if dec_tag_ids and dec_domain_metadata:
+            return c_latent, decoded_tag_ids, domain_metadata_codes
         if dec_tag_ids:
             return c_latent, decoded_tag_ids
+        if dec_domain_metadata:
+            return c_latent, domain_metadata_codes
         return c_latent
     
     def get_input(self, batch, k, bs=None, *args, **kwargs):
@@ -797,7 +840,11 @@ class DiffEIC(LatentDiffusion):
         control = control.to(memory_format=torch.contiguous_format).float()
 
         c_latent, likelihoods, q_likelihoods = self.apply_condition_encoder(control, x)
-        if self.preprocess_semantic_model.enabled or self.preprocess_tag_model.enabled:
+        if (
+            self.preprocess_semantic_model.enabled
+            or self.preprocess_tag_model.enabled
+            or self.external_text_conditioning
+        ):
             if self.training and torch.rand(1) < self.c_ucg_rate:    # randomly drop for classifier free guidance
                 # c_semantic = torch.zeros_like(c_semantic)
                 drop_cond = True
@@ -817,6 +864,14 @@ class DiffEIC(LatentDiffusion):
                 # self.cond_stage_model.encode(c)
                 if drop_cond:
                     c_tag = [''] * len(c_tag)
+                domain_prompts = batch.get("txt")
+                if domain_prompts is not None:
+                    if bs is not None:
+                        domain_prompts = domain_prompts[:bs]
+                    c_tag = [
+                        ", ".join(part for part in (tag, prompt) if part)
+                        for tag, prompt in zip(c_tag, domain_prompts)
+                    ]
                 c_tag = self.cond_stage_model.encode(c_tag)
                 if self.preprocess_semantic_model.enabled:
                     # concat
@@ -824,17 +879,55 @@ class DiffEIC(LatentDiffusion):
                 else:
                     # replace
                     c = c_tag   # overwrite c with c_tag
+            elif self.external_text_conditioning:
+                # Cached RAM++ tags arrive through batch["txt"]. Re-encode
+                # here so classifier-free dropout remains identical to the
+                # original online TagGCM path instead of silently keeping the
+                # conditioning for every training example.
+                c_text = batch.get("txt")
+                if c_text is None:
+                    raise KeyError('external_text_conditioning requires batch["txt"]')
+                if bs is not None:
+                    c_text = c_text[:bs]
+                if drop_cond:
+                    c_text = [''] * len(c_text)
+                c_text = self.cond_stage_model.encode(c_text)
+                if self.preprocess_semantic_model.enabled:
+                    c = torch.cat([c, c_text], 1)
+                else:
+                    c = c_text
 
         N , _, H, W = control.shape
         num_pixels = N * H * W
         bpp = sum((torch.log(likelihood).sum() / (-math.log(2) * num_pixels)) for likelihood in likelihoods)
         q_bpp = sum((torch.log(likelihood).sum() / (-math.log(2) * num_pixels)) for likelihood in q_likelihoods)
         sem_bpp = bits_sem / num_pixels if self.preprocess_semantic_model.enabled else torch.tensor(0.).to(bpp.device)
-        tag_bpp = bits_tag / num_pixels if self.preprocess_tag_model.enabled else torch.tensor(0.).to(bpp.device)
+        tag_bits = bits_tag if self.preprocess_tag_model.enabled else torch.tensor(0.0, device=bpp.device)
+        cached_tag_bits = batch.get("tag_payload_bits")
+        if cached_tag_bits is not None and not self.preprocess_tag_model.enabled:
+            if bs is not None:
+                cached_tag_bits = cached_tag_bits[:bs]
+            tag_bits = tag_bits + torch.as_tensor(cached_tag_bits, device=bpp.device).float().sum()
+        metadata_bits = batch.get("domain_metadata_bits")
+        if metadata_bits is not None:
+            if bs is not None:
+                metadata_bits = metadata_bits[:bs]
+            metadata_bits = torch.as_tensor(metadata_bits, device=bpp.device).float().sum()
+            tag_bits = tag_bits + metadata_bits
+        tag_bpp = tag_bits / num_pixels
+        roi_mask = batch.get("roi_mask")
+        if roi_mask is not None:
+            if bs is not None:
+                roi_mask = roi_mask[:bs]
+            roi_mask = torch.as_tensor(roi_mask, device=control.device).float()
+            if roi_mask.ndim == 3:
+                roi_mask = roi_mask.unsqueeze(-1)
+            roi_mask = einops.rearrange(roi_mask, 'b h w c -> b c h w').contiguous()
         # return x, dict(c_crossattn=[c], c_latent=[c_latent], bpp=bpp, q_bpp=q_bpp, control=[control])
         return x, dict(
             c_crossattn=[c], c_latent=[c_latent], control=[control], 
-            bpp=bpp, q_bpp=q_bpp, sem_bpp=sem_bpp, tag_bpp=tag_bpp)
+            bpp=bpp, q_bpp=q_bpp, sem_bpp=sem_bpp, tag_bpp=tag_bpp,
+            roi_mask=roi_mask)
     
     def apply_model(self, x_noisy, t, cond, *args, **kwargs):
         assert isinstance(cond, dict)
@@ -898,6 +991,8 @@ class DiffEIC(LatentDiffusion):
                     uncond_crossattn = torch.cat([uncond_crossattn, uncond_tag], 1)
                 else:
                     uncond_crossattn = uncond_tag
+            if self.external_text_conditioning and not self.preprocess_tag_model.enabled:
+                uncond_crossattn = self.cond_stage_model.encode([''] * b)
             unconditional_conditioning["c_crossattn"] = [uncond_crossattn]
 
             samples = sampler.sample(
@@ -922,14 +1017,41 @@ class DiffEIC(LatentDiffusion):
         if not self.sd_locked:
             params += list(self.model.diffusion_model.output_blocks.parameters())
             params += list(self.model.diffusion_model.out.parameters())
-        opt = torch.optim.AdamW(params, lr=lr)
+        params = [param for param in params if param.requires_grad]
+        aux_params = [
+            param for name, param in self.preprocess_model.named_parameters()
+            if name.endswith('.quantiles') and param.requires_grad
+        ]
+        groups = [{"params": params, "lr": lr, "name": "main"}]
+        if aux_params:
+            groups.append({"params": aux_params, "lr": self.aux_learning_rate, "name": "entropy_aux"})
+        # One optimizer keeps Lightning 2 automatic optimisation, native
+        # gradient accumulation and an unambiguous global_step. CompressAI's
+        # quantiles only receive gradients from aux_loss below.
+        return torch.optim.AdamW(groups, lr=lr)
 
-        aux_lr = self.aux_learning_rate
-        aux_params = list(param for name, param in self.preprocess_model.named_parameters() 
-                       if name.endswith('.quantiles'))
-        aux_opt =  torch.optim.AdamW(aux_params, lr=aux_lr)
+    def _weighted_spatial_mean(self, loss_map, roi_mask):
+        if roi_mask is None:
+            return loss_map.mean()
+        mask = F.interpolate(roi_mask, size=loss_map.shape[-2:], mode="nearest")
+        mask = mask.clamp(0, 1)
+        weights = self.roi_background_weight + (self.roi_weight - self.roi_background_weight) * mask
+        if loss_map.shape[1] != 1:
+            loss_map = loss_map.mean(dim=1, keepdim=True)
+        return (loss_map * weights).sum() / weights.sum().clamp_min(1e-8)
 
-        return opt, aux_opt
+    def _region_spatial_mean(self, loss_map, roi_mask, foreground):
+        if roi_mask is None:
+            return loss_map.new_zeros(())
+        mask = F.interpolate(roi_mask, size=loss_map.shape[-2:], mode="nearest").clamp(0, 1)
+        if not foreground:
+            mask = 1.0 - mask
+        if loss_map.shape[1] != 1:
+            loss_map = loss_map.mean(dim=1, keepdim=True)
+        denominator = mask.sum()
+        if denominator <= 0:
+            return loss_map.new_zeros(())
+        return (loss_map * mask).sum() / denominator
     
     def p_losses(self, x_start, cond, t, noise=None):
         loss_dict = {}
@@ -972,8 +1094,21 @@ class DiffEIC(LatentDiffusion):
 
         # guide loss
         c_latent = cond['c_latent'][0][:,:4,:,:]
-        loss_guide = self.get_loss(c_latent, x_start)
+        loss_guide_map = self.get_loss(c_latent, x_start, mean=False)
+        loss_guide = self._weighted_spatial_mean(
+            loss_guide_map,
+            cond.get('roi_mask') if self.roi_loss_enabled else None,
+        )
         loss_dict.update({f'{prefix}/l_guide': loss_guide.mean()})
+        if self.roi_loss_enabled:
+            loss_dict.update({
+                f'{prefix}/l_guide_roi': self._region_spatial_mean(
+                    loss_guide_map, cond.get('roi_mask'), foreground=True),
+                f'{prefix}/l_guide_bg': self._region_spatial_mean(
+                    loss_guide_map, cond.get('roi_mask'), foreground=False),
+                f'{prefix}/roi_fraction': cond['roi_mask'].float().mean()
+                    if cond.get('roi_mask') is not None else loss_guide.new_zeros(()),
+            })
         loss += self.l_guide_weight * loss_guide
         # loss_dict.update({f'{prefix}/loss': loss})
 
@@ -1008,7 +1143,11 @@ class DiffEIC(LatentDiffusion):
                 enc_idx = int(self.sl_loc.split('_')[1]) - 1
                 sl_x_ori = features_enc_ori[enc_idx]
                 sl_x = features_enc[enc_idx]
-            loss_semantic = self.get_loss_semantic(sl_x_ori, sl_x, self.sl_metric)
+            loss_semantic_map = self.get_loss_semantic(sl_x_ori, sl_x, self.sl_metric, mean=False)
+            loss_semantic = self._weighted_spatial_mean(
+                loss_semantic_map.unsqueeze(1),
+                cond.get('roi_mask') if self.roi_semantic_enabled else None,
+            )
             loss_dict.update({f'{prefix}/l_semantic': loss_semantic})
             loss += self.l_semantic_weight * loss_semantic
             # Visualize cond_hint and cond_hint_ori: t->0 corresponds to clean image
@@ -1023,41 +1162,31 @@ class DiffEIC(LatentDiffusion):
 
         return loss, loss_dict
     
-    def training_step(self, batch, batch_idx, optimizer_idx):
-        if optimizer_idx == 0:
-            for k in self.ucg_training:
-                p = self.ucg_training[k]["p"]
-                val = self.ucg_training[k]["val"]
-                if val is None:
-                    val = ""
-                for i in range(len(batch[k])):
-                    if self.ucg_prng.choice(2, p=[1 - p, p]):
-                        batch[k][i] = val
+    def training_step(self, batch, batch_idx):
+        for k in self.ucg_training:
+            p = self.ucg_training[k]["p"]
+            val = self.ucg_training[k]["val"]
+            if val is None:
+                val = ""
+            for i in range(len(batch[k])):
+                if self.ucg_prng.choice(2, p=[1 - p, p]):
+                    batch[k][i] = val
 
-            loss, loss_dict = self.shared_step(batch)
-
-            self.log_dict(loss_dict, prog_bar=True,
-                        logger=True, on_step=True, on_epoch=True)
-
-            self.log("global_step", self.global_step,
-                    prog_bar=True, logger=True, on_step=True, on_epoch=False)
-
-            if self.use_scheduler:
-                lr = self.optimizers().param_groups[0]['lr']
-                self.log('lr_abs', lr, prog_bar=True, logger=True, on_step=True, on_epoch=False)
-
-            return loss
-        
-        if optimizer_idx == 1:
-            aux_loss = self.preprocess_model.aux_loss()
-            self.log("aux_loss", aux_loss,
-                    prog_bar=True, logger=True, on_step=True, on_epoch=False)
-            return aux_loss
+        loss, loss_dict = self.shared_step(batch)
+        aux_loss = self.preprocess_model.aux_loss()
+        total_loss = loss + aux_loss
+        loss_dict["T/aux_loss"] = aux_loss
+        loss_dict["T/optim_loss"] = total_loss
+        self.log_dict(loss_dict, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+        if self.use_scheduler:
+            lr = self.optimizers().param_groups[0]['lr']
+            self.log('lr_abs', lr, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+        return total_loss
         
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         out = []
-        log, bpp = self.log_images(batch, bs=None)
+        log, bpp = self.log_images(batch, sample_steps=self.validation_sample_steps, bs=1)
         out.append(bpp.cpu())
         # save images
         save_dir = os.path.join(self.logger.save_dir, "validation", f'{self.global_step}')
@@ -1079,25 +1208,39 @@ class DiffEIC(LatentDiffusion):
         for name, _ in self.calculate_metrics.items():
             out.append(self.metric_funcs[name](*metric_data))
         
-        return out
-    
-    def validation_epoch_end(self, outputs: EPOCH_OUTPUT):
-        outputs = np.array(outputs)
-        avg_out = sum(outputs)/len(outputs)
+        values = torch.stack([torch.as_tensor(value, device=self.device).float().mean() for value in out])
+        self._validation_outputs.append(values)
+        return values
+
+    def on_validation_epoch_start(self):
+        self._validation_outputs.clear()
+
+    def on_validation_epoch_end(self):
+        if not self._validation_outputs:
+            return
+        avg_out = torch.stack(self._validation_outputs).mean(dim=0)
         self.log("avg_bpp", avg_out[0],
                     prog_bar=True, logger=True, on_step=False, on_epoch=True)
         
         for i, (name, _) in enumerate(self.calculate_metrics.items()):
             self.log(f"avg_{name}", avg_out[i+1],
                     prog_bar=True, logger=True, on_step=False, on_epoch=True)
+        self._validation_outputs.clear()
         
     def load_preprocess_ckpt(self, ckpt_path_pre):
-        ckpt = torch.load(ckpt_path_pre)
+        try:
+            ckpt = torch.load(ckpt_path_pre, map_location="cpu", mmap=True, weights_only=False)
+        except TypeError:
+            ckpt = torch.load(ckpt_path_pre, map_location="cpu")
         self.preprocess_model.load_state_dict(ckpt)
         print(['CONTROL WEIGHTS LOADED'])
+        del ckpt
         
     def sync_control_weights_from_base_checkpoint(self, path, synch_control=True):
-        ckpt_base = torch.load(path)  # load the base model checkpoints
+        try:
+            ckpt_base = torch.load(path, map_location="cpu", mmap=True, weights_only=False)
+        except TypeError:
+            ckpt_base = torch.load(path, map_location="cpu")
 
         if synch_control:
             # add copy for control_module weights from the base model
@@ -1126,12 +1269,13 @@ class DiffEIC(LatentDiffusion):
             
         res_sync = self.load_state_dict(ckpt_base['state_dict'], strict=False)
         print(f'[{len(res_sync.missing_keys)} keys are missing from the model (hint processing and cross connections included)]')
+        del ckpt_base
 
-    def get_loss_semantic(self, x, y, loss_type='cos'):
+    def get_loss_semantic(self, x, y, loss_type='cos', mean=True):
         if loss_type == 'cos':
             cos_sim = F.cosine_similarity(x, y, dim=1)
             loss = 1 - cos_sim
-            return loss.mean()
+            return loss.mean() if mean else loss
         elif loss_type == 'normalized_l2':  # equal to 2*(1 - cosine_similarity)
                                             # x̂₁ = x₁ / ||x₁|| 
                                             # x̂₂ = x₂ / ||x₂||
@@ -1145,6 +1289,43 @@ class DiffEIC(LatentDiffusion):
             x_norm = F.normalize(x, p=2, dim=1)
             y_norm = F.normalize(y, p=2, dim=1)
             loss = torch.sum((x_norm - y_norm) ** 2, dim=1)
-            return loss.mean()
+            return loss.mean() if mean else loss
         else:
             raise NotImplementedError('loss_type [{}] not implemented'.format(loss_type))
+
+    def _compact_state_keys(self):
+        trainable = {name for name, parameter in self.named_parameters() if parameter.requires_grad}
+        prefixes = (
+            "control_model.",
+            "preprocess_model.",
+            "preprocess_semantic_model.final_layers.",
+        )
+        return {
+            key
+            for key in self.state_dict()
+            if key in trainable or key.startswith(prefixes)
+        }
+
+    def on_save_checkpoint(self, checkpoint):
+        if not self.compact_checkpoint:
+            return
+        keep = self._compact_state_keys()
+        checkpoint["state_dict"] = {
+            key: value for key, value in checkpoint["state_dict"].items() if key in keep
+        }
+        checkpoint["wild_diff_compact"] = True
+        checkpoint["wild_diff_compact_keys"] = sorted(keep)
+
+    def on_load_checkpoint(self, checkpoint):
+        if not checkpoint.get("wild_diff_compact"):
+            return
+        saved = checkpoint.get("state_dict", {})
+        expected = self._compact_state_keys()
+        missing_trainable = sorted(expected - set(saved))
+        if missing_trainable:
+            preview = ", ".join(missing_trainable[:10])
+            raise RuntimeError(f"compact checkpoint is missing trainable state: {preview}")
+        # Lightning restores model state strictly. Fill omitted frozen weights
+        # with the already-instantiated SD/VAE/RAM++ state without cloning.
+        for key, value in self.state_dict().items():
+            saved.setdefault(key, value)

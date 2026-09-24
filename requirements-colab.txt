@@ -1,4 +1,5 @@
-compressai==1.2.8
+# Install this file on top of Colab's preinstalled torch/torchvision.
+# Install CompressAI separately with --no-deps (see COLAB_TRAINING.md).
 einops>=0.8,<1
 fairscale>=0.4.13,<0.5
 kornia>=0.7,<1
@@ -13,9 +14,7 @@ scipy>=1.11,<2
 lightning>=2.6,<3
 thop==0.1.1.post2209072238
 timm>=0.9.7,<2
-torchvision
 tqdm>=4.66,<5
 transformers>=4.41,<6
 ultralytics_thop==2.0.0
-# Install xformers separately from the index matching Colab's preinstalled
-# torch/CUDA build; do not pin the repository's obsolete 0.0.22 wheel.
+huggingface_hub>=0.23,<2

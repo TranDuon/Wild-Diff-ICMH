@@ -1,0 +1,24 @@
+base: train_kgalagadi_colab.yaml
+
+data:
+  params:
+    dataset_overrides:
+      detections_path: ${oc.env:KGA_DETECTIONS}
+      bbox_crop_probability: 0.75
+
+model:
+  params:
+    roi_loss_enabled: true
+    roi_weight: 4.0
+    roi_background_weight: 1.0
+    # Default H2-V1 is the cheapest controlled test: ROI-weight only L_dist.
+    # Enable both fields by CLI only after V1 shows a useful signal.
+    roi_semantic_enabled: false
+    l_semantic_weight: 0.0
+    sl_loc: enc_9
+
+lightning:
+  trainer:
+    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h2_A01}
+    max_epochs: 2
+    max_steps: -1

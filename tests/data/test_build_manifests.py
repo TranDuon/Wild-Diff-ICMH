@@ -297,24 +297,30 @@ def _make_kgalagadi_zip(tmp_path, n_sites=5, seqs_per_site=6, empty_fraction=0.5
     return out_path, data
 
 
-def test_kgalagadi_site_coverage_and_exclusions(tmp_path):
+def test_kgalagadi_full_site_split_and_exclusions(tmp_path):
     kga_path, data = _make_kgalagadi_zip(tmp_path, n_sites=5, seqs_per_site=6, empty_fraction=0.5)
     coco, meta = build_manifests.load_coco_ct(kga_path)
     report = {}
     rows = build_manifests.build_kgalagadi_rows(
-        coco, meta, seed=20260916, nonempty_size=100, empty_size=50, report=report
+        coco, meta, seed=20260916, report=report
     )
     nonempty_rows = [r for r in rows if r["subset"] == "nonempty"]
-    empty_rows = [r for r in rows if r["subset"] == "empty_check"]
+    empty_rows = [r for r in rows if r["subset"] == "empty"]
 
-    nonempty_sites = {r["site_id"] for r in nonempty_rows}
-    # every site with a non-empty candidate must be covered given a generous budget
-    assert len(nonempty_sites) == report["sites_covered"]
-    assert report["sites_covered"] >= 1
+    assert len(rows) == len(data["images"]) - 1
+    assert report["sites_covered"] == report["sites_total"] == 5
+
+    by_site_split = {}
+    sequence_splits = {}
+    for row in rows:
+        by_site_split.setdefault(row["site_id"], set()).add(row["split"])
+        sequence_splits.setdefault(row["sequence_id"], set()).add(row["split"])
+    assert all(splits == {"train", "val", "test"} for splits in by_site_split.values())
+    assert all(len(splits) == 1 for splits in sequence_splits.values())
 
     for row in rows:
         assert row["site_id"].startswith("KGA:")
-        assert row["split"] == "test"
+        assert row["split"] in {"train", "val", "test"}
         assert row["boxes"] is None
         assert "boxes" in row["null_reasons"]
 
@@ -335,7 +341,34 @@ def test_kgalagadi_no_annotation_excluded(tmp_path):
     coco["annotations"] = [a for a in coco["annotations"] if a["image_id"] != coco["images"][0]["id"]]
     report = {}
     rows = build_manifests.build_kgalagadi_rows(
-        coco, meta, seed=20260916, nonempty_size=50, empty_size=50, report=report
+        coco, meta, seed=20260916, report=report
     )
     assert all(r["image_id"] != f"KGA:{coco['images'][0]['id']}" for r in rows)
     assert report["excluded"]["no_annotation"] >= 1
+
+
+def test_kgalagadi_split_is_deterministic(tmp_path):
+    kga_path, _ = _make_kgalagadi_zip(tmp_path, n_sites=5, seqs_per_site=12)
+    coco, meta = build_manifests.load_coco_ct(kga_path)
+    rows_a = build_manifests.build_kgalagadi_rows(coco, meta, seed=20260916)
+    rows_b = build_manifests.build_kgalagadi_rows(coco, meta, seed=20260916)
+    rows_c = build_manifests.build_kgalagadi_rows(coco, meta, seed=999)
+    split_a = {row["image_id"]: row["split"] for row in rows_a}
+    split_b = {row["image_id"]: row["split"] for row in rows_b}
+    split_c = {row["image_id"]: row["split"] for row in rows_c}
+    assert split_a == split_b
+    assert split_a != split_c
+
+
+def test_kgalagadi_fraction_validation(tmp_path):
+    kga_path, _ = _make_kgalagadi_zip(tmp_path)
+    coco, meta = build_manifests.load_coco_ct(kga_path)
+    with pytest.raises(ValueError, match="sum to 1.0"):
+        build_manifests.build_kgalagadi_rows(
+            coco,
+            meta,
+            seed=1,
+            train_fraction=0.8,
+            val_fraction=0.15,
+            test_fraction=0.15,
+        )

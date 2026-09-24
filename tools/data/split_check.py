@@ -44,6 +44,12 @@ REQUIRED_FIELDS = (
 
 VALID_SPLITS = {"train", "val", "test"}
 
+# Kgalagadi follows the comparison paper's site-specific fine-tuning protocol:
+# every site intentionally has train/val/test data, but a burst/sequence must
+# still belong to exactly one split.  Other sources retain the stricter
+# site-disjoint rule used for external-generalisation evaluation.
+WITHIN_SITE_SPLIT_SOURCES = {"snapshot_kgalagadi"}
+
 
 class SplitLeakageError(RuntimeError):
     """Raised when a manifest (or its derived list files) violate the contract."""
@@ -86,7 +92,7 @@ def _is_unsafe_relative_path(value) -> bool:
 def find_violations(rows: Sequence[dict]) -> List[str]:
     """Return a list of human-readable contract/leakage violation messages."""
     violations: List[str] = []
-    site_to_splits: Dict[str, set] = {}
+    source_site_to_splits: Dict[tuple, set] = {}
     seq_to_splits: Dict[str, set] = {}
     image_id_counts: Dict[str, int] = {}
 
@@ -113,9 +119,10 @@ def find_violations(rows: Sequence[dict]) -> List[str]:
         if split not in VALID_SPLITS:
             violations.append(f"row {label}: invalid split {split!r}")
 
+        source = row.get("source")
         site_id = row.get("site_id")
         if site_id is not None and split in VALID_SPLITS:
-            site_to_splits.setdefault(site_id, set()).add(split)
+            source_site_to_splits.setdefault((source, site_id), set()).add(split)
 
         sequence_id = row.get("sequence_id")
         if sequence_id is not None and split in VALID_SPLITS:
@@ -129,10 +136,11 @@ def find_violations(rows: Sequence[dict]) -> List[str]:
                 f"row {label}: unsafe relative_path {row.get('relative_path')!r}"
             )
 
-    for site_id, splits in site_to_splits.items():
-        if len(splits) > 1:
+    for (source, site_id), splits in source_site_to_splits.items():
+        if source not in WITHIN_SITE_SPLIT_SOURCES and len(splits) > 1:
             violations.append(
-                f"site '{site_id}' present in multiple splits: {sorted(splits)}"
+                f"site '{site_id}' from source '{source}' present in multiple splits: "
+                f"{sorted(splits)}"
             )
     for sequence_id, splits in seq_to_splits.items():
         if len(splits) > 1:

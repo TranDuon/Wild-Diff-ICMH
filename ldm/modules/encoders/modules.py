@@ -185,7 +185,12 @@ class FrozenOpenCLIPEmbedder(AbstractEncoder):
                  freeze=True, layer="last"):
         super().__init__()
         assert layer in self.LAYERS
-        model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=version)
+        # SD 2.1 / Diff-ICMH checkpoints load these weights immediately after
+        # construction.  Downloading the same multi-GB OpenCLIP weights here
+        # wastes Colab time, disk and host RAM.
+        model, _, _ = open_clip.create_model_and_transforms(
+            arch, device=torch.device('cpu'), pretrained=None
+        )
         del model.visual
         self.model = model
 

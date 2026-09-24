@@ -1,5 +1,12 @@
 # Diff-ICMH: Harmonizing Machine and Human Vision in Image Compression with Generative Prior
 
+> **Wild-Diff-ICMH fork:** the original README below is retained as upstream
+> reference. Camera-trap fine-tuning uses the full non-human Snapshot
+> Kgalagadi set, a 70/15/15 sequence split inside each site, and one model per
+> site. Start with [COLAB_TRAINING.md](COLAB_TRAINING.md) or
+> `Wild_Diff_ICMH_Kgalagadi_Train.ipynb`; do not use the legacy Python 3.8 /
+> Lightning 1.x installation steps for Colab.
+
 <div align="center">
 
 [![NeurIPS 2025](https://img.shields.io/badge/NeurIPS-2025-blue.svg)](https://neurips.cc/)

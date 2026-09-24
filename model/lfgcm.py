@@ -1,6 +1,7 @@
 import math
 
 import einops
+import numpy as np
 import open_clip
 import torch
 import torch.nn as nn
@@ -693,6 +694,7 @@ class TagGCM(nn.Module):
                 enabled=False, 
                 pretrained='checkpoints/ram/ram_plus_swin_large_14m.pth',
                 image_size=384,
+                vocabulary_path=None,
                 *args, 
                 **kwargs):
         super().__init__(*args, **kwargs)
@@ -710,6 +712,33 @@ class TagGCM(nn.Module):
             self.register_buffer('preprocess_normalize_std', 
                 torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
             self.image_size = 384
+            self.compact_to_original = None
+            self.original_to_compact = None
+            self.tag_codelength = 13
+            if vocabulary_path:
+                with open(vocabulary_path, 'r', encoding='utf-8') as stream:
+                    requested = {
+                        line.strip().lower() for line in stream
+                        if line.strip() and not line.lstrip().startswith('#')
+                    }
+                model_tags = [str(tag).strip().lower() for tag in self.model.tag_list]
+                compact_to_original = [
+                    index for index, tag in enumerate(model_tags) if tag in requested
+                ]
+                missing = sorted(requested - {model_tags[index] for index in compact_to_original})
+                if missing:
+                    raise ValueError(f'RAM++ vocabulary contains unknown tags: {missing}')
+                if not compact_to_original:
+                    raise ValueError('RAM++ restricted vocabulary is empty')
+                self.compact_to_original = compact_to_original
+                self.original_to_compact = {
+                    original: compact for compact, original in enumerate(compact_to_original)
+                }
+                self.tag_codelength = max(1, math.ceil(math.log2(len(compact_to_original))))
+                print(
+                    f'Restricted RAM++ vocabulary: {len(compact_to_original)} tags, '
+                    f'{self.tag_codelength} bits/tag'
+                )
             print('Tag Model initialized.')
 
     def forward(self, x, return_ids=False):
@@ -741,17 +770,36 @@ class TagGCM(nn.Module):
             # torchvision.utils.save_image(x, 'x.png', normalize=True)
 
             indexs = self.model.generate_index(x)
+            original_indexs = indexs
+            if self.original_to_compact is not None:
+                original_indexs = []
+                compact_indexs = []
+                for index in indexs:
+                    flat = [int(value) for value in index.reshape(-1)]
+                    kept_original = [value for value in flat if value in self.original_to_compact]
+                    kept_compact = [self.original_to_compact[value] for value in kept_original]
+                    original_indexs.append(np.asarray(kept_original, dtype=np.int64).reshape(-1, 1))
+                    compact_indexs.append(np.asarray(kept_compact, dtype=np.int64).reshape(-1, 1))
+                indexs = compact_indexs
             # tags1, tags_chinese1 = self.model.generate_tag(x)
-            tags, tags_chinese = self.model.index2tag(indexs)
+            tags, tags_chinese = self.model.index2tag(original_indexs)
             tags = [tag.replace(' |', ',') for tag in tags]
 
-            # estimate the bits; 4585 is the max number of tag id, so we can use 13 bits (8192) to represent it.
+            # Estimate the exact fixed-width tag payload used by the bitstream.
             n_all_indexs = sum([len(index) for index in indexs])
-            bits = 13 * n_all_indexs
+            payload_bits = self.tag_codelength * n_all_indexs
+            # Bitstream stores three uint32 headers and byte-pads tag ids.
+            bits = 96 + ((payload_bits + 7) // 8) * 8
             
         if return_ids:
             return indexs, torch.tensor(bits).to(x.device).float()
         return tags, torch.tensor(bits).to(x.device).float()
+
+    def expand_tag_ids(self, tag_ids):
+        """Map compact restricted-vocabulary ids back to RAM++ ids."""
+        if self.compact_to_original is None:
+            return [int(value) for value in tag_ids]
+        return [self.compact_to_original[int(value)] for value in tag_ids]
 
 
 if __name__ == "__main__":

@@ -1,0 +1,81 @@
+preflight:
+  enabled: true
+  manifests:
+    - ./data/manifests/kgalagadi_site_split.jsonl
+  build_info: ./data/manifests/build_info.json
+
+data:
+  target: dataset.data_module.DataModule
+  params:
+    train_config: ./configs/dataset/kgalagadi_train.yaml
+    val_config: ./configs/dataset/kgalagadi_val.yaml
+    dataset_overrides:
+      data_root: ${oc.env:WILD_DATA_ROOT,/content/data/wild_diff_icmh/images}
+      site_id: ${oc.env:KGA_SITE_ID,KGA:A01}
+      # Precomputed RAM++ output preserves the authors' text conditioning
+      # without keeping the 3 GB tagger on the training GPU.
+      tags_path: ${oc.env:KGA_TAGS}
+
+model:
+  config: ./configs/model/diffeic.yaml
+  # Pass the authors' checkpoint on the CLI for a new run:
+  # --init-checkpoint /content/checkpoints/.../model.ckpt
+  init_checkpoint: ~
+  # "auto" resumes the newest checkpoint in <default_root_dir>/checkpoints.
+  resume_checkpoint: auto
+  params:
+    # Must match the selected authors' checkpoint folder (2/4/8/16/32).
+    l_bpp_weight: ${oc.env:BPP_WEIGHT,2}
+    external_text_conditioning: true
+    roi_loss_enabled: false
+    roi_semantic_enabled: false
+
+lightning:
+  seed: 20260916
+  trainer:
+    accelerator: gpu
+    devices: 1
+    strategy: auto
+    precision: bf16-mixed
+    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h1_A01}
+    max_epochs: 5
+    max_steps: -1
+    max_time: "00:05:30:00"
+    val_check_interval: 1.0
+    check_val_every_n_epoch: 2
+    limit_val_batches: 4
+    num_sanity_val_steps: 0
+    log_every_n_steps: 10
+    accumulate_grad_batches: 8
+    gradient_clip_val: 1.0
+    benchmark: false
+    deterministic: true
+
+  callbacks:
+    - target: model.callbacks.ImageLogger
+      params:
+        log_every_n_steps: 200
+        log_start_step: 0
+        max_images_each_step: 1
+        log_images_kwargs:
+          sample_steps: 20
+          bs: 1
+    - target: model.callbacks.ModelCheckpoint
+      params:
+        every_n_train_steps: 50
+        # Rolling crash-recovery checkpoint only; avoids accumulating Drive files.
+        save_top_k: 0
+        save_last: true
+        filename: "step-{step:06d}"
+        auto_insert_metric_name: false
+    - target: model.callbacks.ModelCheckpoint
+      params:
+        monitor: avg_lpips
+        mode: min
+        every_n_epochs: 2
+        save_on_train_epoch_end: false
+        save_top_k: 1
+        save_last: false
+        filename: "best"
+        auto_insert_metric_name: false
+        enable_version_counter: false

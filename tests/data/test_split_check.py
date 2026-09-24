@@ -82,6 +82,33 @@ def test_shared_site_between_train_and_val_is_blocked(tmp_path):
     assert "FAILED" in result.stdout
 
 
+def test_kgalagadi_site_overlap_allowed_but_sequence_overlap_rejected(tmp_path):
+    train = _row(
+        image_id="KGA:img1",
+        source="snapshot_kgalagadi",
+        relative_path="snapshot_kgalagadi/train.jpg",
+        site_id="KGA:A01",
+        sequence_id="KGA:SEQ1",
+        split="train",
+    )
+    val = _row(
+        image_id="KGA:img2",
+        source="snapshot_kgalagadi",
+        relative_path="snapshot_kgalagadi/val.jpg",
+        site_id="KGA:A01",
+        sequence_id="KGA:SEQ2",
+        split="val",
+    )
+    manifest = _write_manifest(tmp_path / "kga.jsonl", [train, val])
+    rows = split_check.load_manifest_rows([manifest])
+    assert split_check.find_violations(rows) == []
+
+    val["sequence_id"] = train["sequence_id"]
+    manifest = _write_manifest(tmp_path / "kga_leak.jsonl", [train, val])
+    violations = split_check.find_violations(split_check.load_manifest_rows([manifest]))
+    assert any("sequence" in violation for violation in violations)
+
+
 def test_shared_sequence_across_splits_even_with_different_sites(tmp_path):
     rows = [
         _row(image_id="SER:img1", site_id="SER:D01", sequence_id="SER:SEQ1", split="train"),

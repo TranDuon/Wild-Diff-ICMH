@@ -16,11 +16,11 @@ lightning:
   seed: 231
   
   trainer:
-    accelerator: ddp
-    precision: 32
+    accelerator: gpu
+    devices: 1
+    strategy: auto
+    precision: 32-true
     # precision: bf16
-    # Indices of GPUs used for training.
-    gpus: [0]
     # Path to save logs and checkpoints.
     default_root_dir: ./logs/debug
     # default_root_dir: ./logs/1_2_16_0_SFGCM_tokens
@@ -46,7 +46,7 @@ lightning:
     - target: model.callbacks.ModelCheckpoint
       params:
         # Frequency of saving checkpoints.
-        # every_n_train_steps: 5000
-        every_n_train_steps: 10000
-        save_top_k: -1
+        every_n_train_steps: 1000
+        save_top_k: 0
+        save_last: true
         filename: "{step}"

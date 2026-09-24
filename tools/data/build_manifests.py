@@ -1,12 +1,13 @@
-"""Build the frozen Serengeti train/val and Kgalagadi test manifests.
+"""Build reproducible camera-trap manifests for Wild-Diff-ICMH.
 
-Reads the official LILA COCO-CT bbox JSON for Snapshot Serengeti and the
-Snapshot Kgalagadi metadata JSON, emits one JSONL row per selected image
-following the ``split_check.REQUIRED_FIELDS`` contract, splits Serengeti by
-site (so no site or sequence crosses train/val) and stratifies by
-day/night, builds a Kgalagadi test manifest covering every site that has at
-least one non-empty candidate, and gates all of its own output through
-``split_check.assert_no_leakage`` before returning 0.
+Snapshot Kgalagadi is the primary experiment dataset.  It is split *within
+each camera site* by sequence (70/15/15 by default), matching the
+site-specific fine-tuning protocol of the comparison paper while preventing
+frames from the same burst leaking across train/validation/test.  Snapshot
+Serengeti remains an optional, site-disjoint external-generalisation set.
+
+All output is gated through ``split_check.assert_no_leakage`` before the
+builder returns successfully.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import json
 import random
 import sys
 import zipfile
+import math
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -156,6 +158,39 @@ def _round_robin_by_site(pool: List[dict], quota: int, seed_ns: str) -> Tuple[Li
             break
     leftover = [row for site in site_order for row in remaining[site]]
     return selected, leftover
+
+
+def _largest_remainder_counts(total: int, fractions: Dict[str, float]) -> Dict[str, int]:
+    """Convert fractions to deterministic integer counts that sum to total.
+
+    When at least as many groups as splits are available, every non-zero
+    split receives at least one group.  This is important for the smallest
+    Kgalagadi sites: a site-specific model needs a validation and test split,
+    not only a training split.
+    """
+    if total < 0:
+        raise ValueError("total must be non-negative")
+    if not fractions or any(v < 0 for v in fractions.values()):
+        raise ValueError("split fractions must be non-negative")
+    fraction_sum = sum(fractions.values())
+    if not math.isclose(fraction_sum, 1.0, rel_tol=0.0, abs_tol=1e-9):
+        raise ValueError(f"split fractions must sum to 1.0, got {fraction_sum}")
+
+    raw = {name: total * value for name, value in fractions.items()}
+    counts = {name: int(math.floor(value)) for name, value in raw.items()}
+    for name in sorted(fractions, key=lambda n: (-(raw[n] - counts[n]), n))[: total - sum(counts.values())]:
+        counts[name] += 1
+
+    nonzero = [name for name, value in fractions.items() if value > 0]
+    if total >= len(nonzero):
+        for empty_name in [name for name in nonzero if counts[name] == 0]:
+            donors = [name for name in nonzero if counts[name] > 1]
+            if not donors:
+                break
+            donor = max(donors, key=lambda n: (counts[n] - raw[n], counts[n], n))
+            counts[donor] -= 1
+            counts[empty_name] += 1
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -371,10 +406,26 @@ def build_kgalagadi_rows(
     meta: dict,
     *,
     seed,
-    nonempty_size: int = 400,
-    empty_size: int = 50,
+    train_fraction: float = 0.70,
+    val_fraction: float = 0.15,
+    test_fraction: float = 0.15,
     report: Optional[dict] = None,
 ) -> List[dict]:
+    """Build the full non-human Kgalagadi corpus and split within each site.
+
+    The official JSON contains 10,357 images.  Removing the 135 human-labelled
+    images leaves the 10,222 images reported by the comparison paper.  Every
+    frame of a sequence receives the same split.  Assignment is deterministic
+    and balances each site's day/night and empty/non-empty sequence strata as
+    closely as the site size permits.
+    """
+    fractions = {
+        "train": train_fraction,
+        "val": val_fraction,
+        "test": test_fraction,
+    }
+    _largest_remainder_counts(0, fractions)  # validates the fractions
+
     category_names = {c["id"]: c["name"] for c in coco["categories"]}
     empty_category_ids = {cid for cid, name in category_names.items() if name == "empty"}
     human_category_ids = {cid for cid, name in category_names.items() if "human" in name.lower()}
@@ -441,8 +492,8 @@ def build_kgalagadi_rows(
             "species": species,
             "is_empty": is_empty,
             "boxes": None,
-            "subset": None,
-            "split": "test",
+            "subset": "empty" if is_empty else "nonempty",
+            "split": None,
             "sample_rank": None,
             "sha256": None,
             "null_reasons": {},
@@ -456,6 +507,8 @@ def build_kgalagadi_rows(
         for field in ("frame_num", "width", "height"):
             if row[field] is None:
                 null_reasons[field] = f"missing {field} in source image record"
+        null_reasons["split"] = "not yet assigned"
+        null_reasons["sample_rank"] = "not yet assigned"
         candidates.append(row)
 
     if seq_fallback_used:
@@ -463,34 +516,76 @@ def build_kgalagadi_rows(
             "some annotations matched by seq_id fallback (no per-image annotation found)"
         )
 
-    nonempty_candidates = [r for r in candidates if r["is_empty"] is False]
-    empty_candidates = [r for r in candidates if r["is_empty"] is True]
+    rows_by_site_sequence: Dict[str, Dict[str, List[dict]]] = {}
+    for row in candidates:
+        rows_by_site_sequence.setdefault(row["site_id"], {}).setdefault(row["sequence_id"], []).append(row)
 
-    nonempty_selected, _ = _round_robin_by_site(nonempty_candidates, nonempty_size, f"{seed}:kga_nonempty")
-    empty_selected, _ = _round_robin_by_site(empty_candidates, empty_size, f"{seed}:kga_empty")
+    assigned: List[dict] = []
+    site_split_sequences: Dict[str, Dict[str, int]] = {}
+    for site_id in sorted(rows_by_site_sequence):
+        by_sequence = rows_by_site_sequence[site_id]
+        targets = _largest_remainder_counts(len(by_sequence), fractions)
+        assigned_counts = {name: 0 for name in fractions}
+        assigned_strata = {name: collections.Counter() for name in fractions}
 
-    for row in nonempty_selected:
-        row["subset"] = "nonempty"
-    for row in empty_selected:
-        row["subset"] = "empty_check"
+        sequence_records = []
+        for sequence_id, sequence_rows in by_sequence.items():
+            illumination_values = {r["illumination"] for r in sequence_rows}
+            illumination = next(iter(illumination_values)) if len(illumination_values) == 1 else "mixed"
+            if all(r["is_empty"] is True for r in sequence_rows):
+                occupancy = "empty"
+            elif any(r["is_empty"] is False for r in sequence_rows):
+                occupancy = "nonempty"
+            else:
+                occupancy = "unknown"
+            sequence_records.append((sequence_id, (illumination, occupancy), sequence_rows))
 
-    shortfalls = {}
-    if len(nonempty_selected) < nonempty_size:
-        shortfalls["nonempty"] = {"requested": nonempty_size, "actual": len(nonempty_selected)}
-    if len(empty_selected) < empty_size:
-        shortfalls["empty_check"] = {"requested": empty_size, "actual": len(empty_selected)}
+        random.Random(f"{seed}:{site_id}:sequences").shuffle(sequence_records)
+        # Rare strata first; otherwise a rare night/non-empty sequence tends to
+        # be consumed by train before validation/test receive representation.
+        stratum_sizes = collections.Counter(stratum for _, stratum, _ in sequence_records)
+        sequence_records.sort(key=lambda item: (stratum_sizes[item[1]], item[1]))
 
-    selected = _interleave_by_proportion([nonempty_selected, empty_selected])
-    for rank, row in enumerate(selected):
-        row["sample_rank"] = rank
-        row["null_reasons"].pop("sample_rank", None)
+        for sequence_id, stratum, sequence_rows in sequence_records:
+            available = [name for name in fractions if assigned_counts[name] < targets[name]]
+            if not available:  # defensive; integer targets should make this unreachable
+                raise RuntimeError(f"no split capacity left for {site_id}/{sequence_id}")
+            split = min(
+                available,
+                key=lambda name: (
+                    assigned_strata[name][stratum] / max(1, targets[name]),
+                    assigned_counts[name] / max(1, targets[name]),
+                    ("train", "val", "test").index(name),
+                ),
+            )
+            assigned_counts[split] += 1
+            assigned_strata[split][stratum] += 1
+            for row in sequence_rows:
+                row["split"] = split
+                row["null_reasons"].pop("split", None)
+                assigned.append(row)
+        site_split_sequences[site_id] = dict(assigned_counts)
+
+    # Rank each split with a site round-robin ordering.  Prefix downloads used
+    # for smoke tests therefore cover many sites instead of only site A01.
+    selected: List[dict] = []
+    for split in ("train", "val", "test"):
+        split_rows = [row for row in assigned if row["split"] == split]
+        ordered, leftover = _round_robin_by_site(split_rows, len(split_rows), f"{seed}:kga:{split}:rank")
+        assert not leftover
+        for rank, row in enumerate(ordered):
+            row["sample_rank"] = rank
+            row["null_reasons"].pop("sample_rank", None)
+        selected.extend(ordered)
 
     if report is not None:
         report["excluded"] = excluded
         report["mapping_notes"] = mapping_notes
-        report["sites_total"] = len({r["site_id"] for r in candidates})
-        report["sites_covered"] = len({r["site_id"] for r in nonempty_selected})
-        report["shortfalls"] = shortfalls
+        report["sites_total"] = len(rows_by_site_sequence)
+        report["sites_covered"] = len({r["site_id"] for r in selected})
+        report["site_split_sequences"] = site_split_sequences
+        report["fractions"] = fractions
+        report["shortfalls"] = {}
 
     return selected
 
@@ -556,6 +651,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--serengeti-bbox-json",
         default="data/raw/snapshot_serengeti/bboxes.json.zip",
     )
+    parser.add_argument("--skip-serengeti", action="store_true")
     parser.add_argument("--out-dir", default="data/manifests")
     parser.add_argument("--seed", type=int, default=20260916)
     parser.add_argument("--train-size", type=int, default=4000)
@@ -567,8 +663,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--kgalagadi-json",
         default="data/raw/snapshot_kgalagadi/SnapshotKgalagadi_S1_v1.0.json.zip",
     )
-    parser.add_argument("--kga-nonempty-size", type=int, default=400)
-    parser.add_argument("--kga-empty-size", type=int, default=50)
+    parser.add_argument("--kga-train-fraction", type=float, default=0.70)
+    parser.add_argument("--kga-val-fraction", type=float, default=0.15)
+    parser.add_argument("--kga-test-fraction", type=float, default=0.15)
     parser.add_argument("--skip-kgalagadi", action="store_true")
     return parser
 
@@ -578,37 +675,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     out_dir = Path(args.out_dir)
 
-    data, meta = load_coco_ct(args.serengeti_bbox_json)
-    category_names = {c["id"]: c["name"] for c in data["categories"]}
-    anns_by_image: Dict[str, List[dict]] = {}
-    for ann in data["annotations"]:
-        anns_by_image.setdefault(ann["image_id"], []).append(ann)
-
-    rows = [
-        make_serengeti_row(image, anns_by_image.get(image["id"], []), category_names, meta["member_name"])
-        for image in data["images"]
-    ]
-
-    serengeti_report: dict = {}
-    try:
-        rows = split_and_sample_serengeti(
-            rows,
-            seed=args.seed,
-            train_size=args.train_size,
-            val_size=args.val_size,
-            val_site_fraction=args.val_site_fraction,
-            max_per_sequence=args.max_per_sequence,
-            night_fraction=args.night_fraction,
-            report=serengeti_report,
-        )
-    except ValueError as exc:
-        print(f"build_manifests: {exc}")
-        return 1
-
-    serengeti_path = out_dir / "serengeti_trainval.jsonl"
-    write_jsonl(rows, serengeti_path)
-    manifest_paths = [serengeti_path]
-
+    manifest_paths = []
     build_info = {
         "generator": "tools/data/build_manifests.py",
         "seed": args.seed,
@@ -618,21 +685,48 @@ def main(argv=None) -> int:
             "val_site_fraction": args.val_site_fraction,
             "max_per_sequence": args.max_per_sequence,
             "night_fraction": args.night_fraction,
-            "kga_nonempty_size": args.kga_nonempty_size,
-            "kga_empty_size": args.kga_empty_size,
+            "kga_train_fraction": args.kga_train_fraction,
+            "kga_val_fraction": args.kga_val_fraction,
+            "kga_test_fraction": args.kga_test_fraction,
         },
-        "sources": {
-            "snapshot_serengeti": {**meta, "info": data.get("info", {})},
-        },
-        "manifests": {
-            "serengeti_trainval.jsonl": _manifest_stats(rows),
-        },
-        "excluded": {
-            "snapshot_serengeti": serengeti_report.get("excluded", {}),
-        },
+        "sources": {},
+        "manifests": {},
+        "excluded": {},
         "mapping_notes": [],
         "shortfalls": {},
     }
+
+    if not args.skip_serengeti:
+        data, meta = load_coco_ct(args.serengeti_bbox_json)
+        category_names = {c["id"]: c["name"] for c in data["categories"]}
+        anns_by_image: Dict[str, List[dict]] = {}
+        for ann in data["annotations"]:
+            anns_by_image.setdefault(ann["image_id"], []).append(ann)
+        rows = [
+            make_serengeti_row(image, anns_by_image.get(image["id"], []), category_names, meta["member_name"])
+            for image in data["images"]
+        ]
+        serengeti_report: dict = {}
+        try:
+            rows = split_and_sample_serengeti(
+                rows,
+                seed=args.seed,
+                train_size=args.train_size,
+                val_size=args.val_size,
+                val_site_fraction=args.val_site_fraction,
+                max_per_sequence=args.max_per_sequence,
+                night_fraction=args.night_fraction,
+                report=serengeti_report,
+            )
+        except ValueError as exc:
+            print(f"build_manifests: {exc}")
+            return 1
+        serengeti_path = out_dir / "serengeti_trainval.jsonl"
+        write_jsonl(rows, serengeti_path)
+        manifest_paths.append(serengeti_path)
+        build_info["sources"]["snapshot_serengeti"] = {**meta, "info": data.get("info", {})}
+        build_info["manifests"][serengeti_path.name] = _manifest_stats(rows)
+        build_info["excluded"]["snapshot_serengeti"] = serengeti_report.get("excluded", {})
 
     if not args.skip_kgalagadi:
         kga_data, kga_meta = load_coco_ct(args.kgalagadi_json)
@@ -641,19 +735,21 @@ def main(argv=None) -> int:
             kga_data,
             kga_meta,
             seed=args.seed,
-            nonempty_size=args.kga_nonempty_size,
-            empty_size=args.kga_empty_size,
+            train_fraction=args.kga_train_fraction,
+            val_fraction=args.kga_val_fraction,
+            test_fraction=args.kga_test_fraction,
             report=kga_report,
         )
-        kga_path = out_dir / "kgalagadi_test.jsonl"
+        kga_path = out_dir / "kgalagadi_site_split.jsonl"
         write_jsonl(kga_rows, kga_path)
         manifest_paths.append(kga_path)
 
         build_info["sources"]["snapshot_kgalagadi"] = {**kga_meta, "info": kga_data.get("info", {})}
-        build_info["manifests"]["kgalagadi_test.jsonl"] = _manifest_stats(kga_rows)
+        build_info["manifests"][kga_path.name] = _manifest_stats(kga_rows)
         build_info["excluded"]["snapshot_kgalagadi"] = kga_report.get("excluded", {})
         build_info["kga_sites_total"] = kga_report.get("sites_total")
         build_info["kga_sites_covered"] = kga_report.get("sites_covered")
+        build_info["kga_site_split_sequences"] = kga_report.get("site_split_sequences", {})
         build_info["shortfalls"] = kga_report.get("shortfalls", {})
         build_info["mapping_notes"] = kga_report.get("mapping_notes", [])
 

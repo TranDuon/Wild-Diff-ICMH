@@ -1,0 +1,10 @@
+base: train_kgalagadi_colab.yaml
+
+# Compute-matched continuation control for H2. Warm-start this run from the
+# same H1 checkpoint as H2; it resets the optimizer and trains 2 epochs with
+# the original uniform loss, isolating the contribution of ROI weighting.
+lightning:
+  trainer:
+    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h1_control_A01}
+    max_epochs: 2
+    max_steps: -1

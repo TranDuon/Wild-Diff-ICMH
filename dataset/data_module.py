@@ -1,7 +1,6 @@
-from typing import Any, Tuple, Mapping
+from typing import Any, Tuple, Mapping, Optional
 
-from pytorch_lightning.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from torch.utils.data import DataLoader, Dataset
 from omegaconf import OmegaConf
 
@@ -14,14 +13,21 @@ class DataModule(pl.LightningDataModule):
     def __init__(
         self,
         train_config: str,
-        val_config: str=None
+        val_config: str=None,
+        dataset_overrides: Optional[Mapping[str, Any]]=None,
     ) -> "DataModule":
         super().__init__()
         self.train_config = OmegaConf.load(train_config)
         self.val_config = OmegaConf.load(val_config) if val_config else None
+        self.dataset_overrides = dataset_overrides or {}
 
     def load_dataset(self, config: Mapping[str, Any]) -> Tuple[Dataset, BatchTransform]:
-        dataset = instantiate_from_config(config["dataset"])
+        dataset_config = OmegaConf.create(OmegaConf.to_container(config["dataset"], resolve=True))
+        if self.dataset_overrides:
+            dataset_config["params"] = OmegaConf.merge(
+                dataset_config.get("params", {}), self.dataset_overrides
+            )
+        dataset = instantiate_from_config(dataset_config)
         batch_transform = (
             instantiate_from_config(config["batch_transform"])
             if config.get("batch_transform") else IdentityBatchTransform()
@@ -38,12 +44,12 @@ class DataModule(pl.LightningDataModule):
         else:
             raise NotImplementedError(stage)
 
-    def train_dataloader(self) -> TRAIN_DATALOADERS:
+    def train_dataloader(self) -> DataLoader:
         return DataLoader(
             dataset=self.train_dataset, **self.train_config["data_loader"]
         )
 
-    def val_dataloader(self) -> EVAL_DATALOADERS:
+    def val_dataloader(self):
         if self.val_dataset is None:
             return None
         return DataLoader(

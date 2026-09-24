@@ -1,12 +1,13 @@
 from typing import List, Tuple, Optional
 import os
+import gc
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 from argparse import ArgumentParser, Namespace
 
 import numpy as np
 import torch
 import einops
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from PIL import Image
 from omegaconf import OmegaConf
 
@@ -17,6 +18,13 @@ from model.diffeic import DiffEIC
 from utils.image import pad
 from utils.common import instantiate_from_config, load_state_dict
 from utils.file import list_image_files, get_file_name_parts
+
+
+def _torch_load(path: str):
+    try:
+        return torch.load(path, map_location="cpu", mmap=True, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location="cpu")
 
 
 @torch.no_grad()
@@ -110,13 +118,18 @@ def main() -> None:
         disable_xformers()
 
     model: DiffEIC = instantiate_from_config(OmegaConf.load(args.config))
-    load_state_dict(model, torch.load(args.ckpt, map_location="cpu"), strict=True)
+    checkpoint = _torch_load(args.ckpt)
+    load_state_dict(model, checkpoint, strict=True)
+    del checkpoint
+    gc.collect()
     # update preprocess model
     model.preprocess_model.update(force=True)
     model.freeze()
     model.to(args.device)
 
     bpps = []
+    total_bits = 0
+    total_pixels = 0
     
     assert os.path.isdir(args.input)
     
@@ -134,11 +147,16 @@ def main() -> None:
         os.makedirs(parent_path, exist_ok=True)
         os.makedirs(stream_parent_path, exist_ok=True)
         
-        preds, bpp = process(
+        preds, _ = process(
             model, [x], steps=args.steps, sampler=args.sampler,
             stream_path=stream_path
         )
         pred = preds[0]
+
+        # Count the actual bitstream against the original (unpadded) image.
+        bpp = os.path.getsize(stream_path) * 8.0 / (img.width * img.height)
+        total_bits += os.path.getsize(stream_path) * 8
+        total_pixels += img.width * img.height
 
         bpps.append(bpp)
         
@@ -148,7 +166,7 @@ def main() -> None:
         Image.fromarray(pred).save(save_path)
         print(f"save to {save_path}, bpp {bpp}")
 
-    avg_bpp = sum(bpps) / len(bpps)
+    avg_bpp = total_bits / total_pixels
     print(f'avg bpp: {avg_bpp}')
             
 

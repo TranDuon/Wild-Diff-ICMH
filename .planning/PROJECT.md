@@ -28,8 +28,8 @@ Người dùng cuối là các nhà sinh thái học vận hành mạng bẫy �
 
 <!-- Phạm vi hiện tại. Tất cả đều là giả thuyết cho tới khi ship và xác minh. -->
 
-- [ ] Corpus ~60K ảnh bẫy ảnh (Snapshot Serengeti có bbox + Caltech Camera Traps) được tải, chuẩn hoá, và **split theo site không rò rỉ**
-- [ ] Mask pseudo-GT sinh bằng SAM từ bbox ground-truth cho tập val, và ROI mask cho tập train
+- [ ] Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có người được tải, chuẩn hoá và chia 70/15/15 **theo sequence trong từng site**; Serengeti chỉ dùng đánh giá bổ sung
+- [ ] ROI mask Kgalagadi sinh từ bbox MegaDetector; ghi rõ đây là pseudo-label và giữ detector/ngưỡng cố định giữa mọi ablation
 - [ ] Eval harness đo detection (mAP tách theo AP_s/m/l), species classification, segmentation — mọi số ghi vào `results.jsonl` một schema duy nhất
 - [ ] Baseline Diff-ICMH gốc trên miền bẫy ảnh, đo tách **ngày RGB / đêm IR**
 - [ ] Đo trần vật lý của VAE (giới hạn tái tạo hoa văn) để định lại mục tiêu bằng số liệu, không tranh luận suông
@@ -38,7 +38,7 @@ Người dùng cuối là các nhà sinh thái học vận hành mạng bẫy �
 - [ ] **H3** — Domain-aware TGM: vocab loài thu gọn (L1) + structured attributes từ metadata (L2)
 - [ ] RD curve nhiều điểm bitrate cho các cấu hình gốc / +H1 / +full
 - [ ] Bảng ablation cô lập đóng góp từng thành phần
-- [ ] Bảng đo **cái giá của chuyên biệt hoá**: eval chéo trên miền tổng quát (COCO/Kodak) và site mới (CCT)
+- [ ] Bảng đo **cái giá của chuyên biệt hoá**: eval chéo trên miền tổng quát (COCO/Kodak) và tập camera-trap bổ sung (Serengeti)
 - [ ] Báo cáo kỹ thuật + reproducibility package + slide/demo
 
 ### Out of Scope

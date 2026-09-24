@@ -2,8 +2,8 @@ import importlib
 from inspect import isfunction
 from typing import Optional, Tuple, Union
 
-import lpips
 import numpy as np
+import pyiqa
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,7 +50,7 @@ def calculate_psnr_pt(img, img2, crop_border, test_y_channel=False):
 class LPIPS:
     
     def __init__(self, net: str) -> None:
-        self.model = lpips.LPIPS(net=net)
+        self.model = pyiqa.create_metric("lpips", net=net)
         frozen_module(self.model)
     
     @torch.no_grad()
@@ -68,7 +68,10 @@ class LPIPS:
         Returns:
             lpips_values (torch.Tensor): The lpips scores of this batch.
         """
-        return self.model(img1, img2, normalize=normalize)
+        if not normalize:
+            img1 = (img1 + 1.0) / 2.0
+            img2 = (img2 + 1.0) / 2.0
+        return self.model(img1, img2)
     
     def to(self, device: str) -> "LPIPS":
         self.model.to(device)
@@ -98,6 +101,33 @@ def compute_ssim( x, y):
         ssim_map, cs_map = _compute_ssim_per_channel(x=x, y=y, kernel=kernel, data_range=1, k1=k1, k2=k2)
         ssim_val = ssim_map.mean(1)
         return ssim_val.mean(dim=0)       
+
+
+def compute_ssim_masked(x, y, mask):
+    """SSIM averaged over a binary foreground mask (bbox/ROI pixels)."""
+    if mask.ndim == 3:
+        mask = mask.unsqueeze(1)
+    mask = mask.to(device=x.device, dtype=x.dtype).clamp(0, 1)
+    kernel_size = 11
+    kernel_sigma = 1.5
+    kernel = gaussian_filter(kernel_size, kernel_sigma, device=x.device, dtype=x.dtype)
+    kernel_rgb = kernel.repeat(x.size(1), 1, 1, 1)
+    mu_x = F.conv2d(x, kernel_rgb, groups=x.size(1))
+    mu_y = F.conv2d(y, kernel_rgb, groups=y.size(1))
+    mu_xx, mu_yy, mu_xy = mu_x.square(), mu_y.square(), mu_x * mu_y
+    sigma_xx = F.conv2d(x.square(), kernel_rgb, groups=x.size(1)) - mu_xx
+    sigma_yy = F.conv2d(y.square(), kernel_rgb, groups=y.size(1)) - mu_yy
+    sigma_xy = F.conv2d(x * y, kernel_rgb, groups=x.size(1)) - mu_xy
+    c1, c2 = 0.01 ** 2, 0.03 ** 2
+    ssim_map = ((2 * mu_xy + c1) * (2 * sigma_xy + c2)) / (
+        (mu_xx + mu_yy + c1) * (sigma_xx + sigma_yy + c2)
+    )
+    ssim_map = ssim_map.mean(dim=1, keepdim=True)
+    valid_mask = F.avg_pool2d(mask, kernel_size=kernel_size, stride=1)
+    denominator = valid_mask.sum()
+    if denominator <= 0:
+        return torch.tensor(float("nan"), device=x.device)
+    return (ssim_map * valid_mask).sum() / denominator
     
     
 def _ssim_per_channel(x: torch.Tensor, y: torch.Tensor, kernel: torch.Tensor,

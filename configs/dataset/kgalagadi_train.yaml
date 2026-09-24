@@ -1,0 +1,25 @@
+dataset:
+  target: dataset.camera_trap_dataset.CameraTrapDataset
+  params:
+    manifest_path: ./data/manifests/kgalagadi_site_split.jsonl
+    data_root: /content/data/wild_diff_icmh/images
+    split: train
+    site_id: ~
+    out_size: 256
+    crop_type: random
+    use_hflip: true
+    bbox_crop_probability: 0.0
+    detections_path: ~
+    tags_path: ~
+    domain_conditioning: false
+
+data_loader:
+  batch_size: 1
+  shuffle: true
+  num_workers: 4
+  persistent_workers: true
+  pin_memory: true
+  drop_last: true
+
+batch_transform:
+  target: dataset.batch_transform.IdentityBatchTransform

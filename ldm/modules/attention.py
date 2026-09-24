@@ -176,30 +176,21 @@ class CrossAttention(nn.Module):
         k = self.to_k(context)
         v = self.to_v(context)
 
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
-
-        # force cast to fp32 to avoid overflowing
-        if _ATTN_PRECISION =="fp32":
-            # with torch.autocast(enabled=False, device_type = 'cuda'):
-            with torch.autocast(enabled=False, device_type="cuda" if str(x.device).startswith("cuda") else "cpu"):
-                q, k = q.float(), k.float()
-                sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
-        else:
-            sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
-        
-        del q, k
-    
+        # PyTorch 2.x SDPA selects Flash/Memory-Efficient kernels on L4/A100
+        # without a separately compiled xformers wheel. Parameter names and
+        # checkpoint compatibility are unchanged.
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=h), (q, k, v))
+        attn_mask = None
         if exists(mask):
-            mask = rearrange(mask, 'b ... -> b (...)')
-            max_neg_value = -torch.finfo(sim.dtype).max
-            mask = repeat(mask, 'b j -> (b h) () j', h=h)
-            sim.masked_fill_(~mask, max_neg_value)
-
-        # attention, what we cannot get enough of
-        sim = sim.softmax(dim=-1)
-
-        out = einsum('b i j, b j d -> b i d', sim, v)
-        out = rearrange(out, '(b h) n d -> b n (h d)', h=h)
+            mask = rearrange(mask, 'b ... -> b (...)').bool()
+            attn_mask = mask[:, None, None, :]
+        output_dtype = q.dtype
+        if _ATTN_PRECISION == "fp32":
+            q, k, v = q.float(), k.float(), v.float()
+        out = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, dropout_p=0.0, is_causal=False
+        ).to(output_dtype)
+        out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
 
 
@@ -261,7 +252,9 @@ class BasicTransformerBlock(nn.Module):
                  disable_self_attn=False):
         super().__init__()
         # attn_mode = "softmax-xformers" if XFORMERS_IS_AVAILBLE else "softmax"
-        attn_mode = "softmax-xformers" if xformers_state.is_xformers_available() else "softmax"
+        # Prefer torch SDPA: it is ABI-stable with Colab's preinstalled torch
+        # and removes xformers as a hard dependency.
+        attn_mode = "softmax"
         assert attn_mode in self.ATTENTION_MODES
         attn_cls = self.ATTENTION_MODES[attn_mode]
         self.disable_self_attn = disable_self_attn
