@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,7 @@ import lightning.pytorch as pl
 import torch
 from omegaconf import OmegaConf
 
+from utils.checkpoint_contract import state_dict_shape_mismatches
 from utils.common import instantiate_from_config, load_state_dict
 
 
@@ -42,6 +44,30 @@ def _torch_load(path: str):
         return torch.load(path, mmap=True, weights_only=False, **kwargs)
     except TypeError:  # older torch without mmap/weights_only
         return torch.load(path, **kwargs)
+
+
+def _validate_author_checkpoint_contract(path: Optional[str], model_config) -> None:
+    """Verify architecture encoded in the published checkpoint directory."""
+    if not path:
+        return
+    match = re.search(r"(?:^|[\\/])CNscale(?P<ratio>\d+(?:\.\d+)?)_", str(path))
+    if match is None:
+        return
+    checkpoint_ratio = float(match.group("ratio"))
+    configured_ratio = float(
+        model_config.params.control_stage_config.params.control_model_ratio
+    )
+    if configured_ratio != checkpoint_ratio:
+        raise ValueError(
+            "Author checkpoint/control architecture mismatch: "
+            f"{path} declares CNscale{checkpoint_ratio:g}, but the model is configured "
+            f"with control_model_ratio={configured_ratio:g}. These values must match; "
+            "do not suppress control-model tensor size mismatches."
+        )
+    print(
+        f"Author checkpoint contract passed: control_model_ratio={configured_ratio:g}",
+        flush=True,
+    )
 
 
 def _run_data_preflight(config):
@@ -182,6 +208,7 @@ def main() -> None:
     sync_path = model_config.params.get("sync_path")
     if sync_path and not Path(str(sync_path)).is_file():
         raise FileNotFoundError(f"Stable Diffusion checkpoint not found: {sync_path}")
+    _validate_author_checkpoint_contract(init_path, model_config)
     print("[Train 3/6] Building Diff-ICMH model (this can take several minutes)", flush=True)
     model = instantiate_from_config(model_config)
 
@@ -201,6 +228,16 @@ def main() -> None:
             checkpoint = {
                 "state_dict": {key: value for key, value in state.items() if key.startswith("preprocess_model.")}
             }
+        mismatches = state_dict_shape_mismatches(model, checkpoint)
+        if mismatches:
+            preview = "; ".join(
+                f"{key}: checkpoint={checkpoint_shape}, model={model_shape}"
+                for key, checkpoint_shape, model_shape in mismatches[:8]
+            )
+            raise RuntimeError(
+                f"Author checkpoint has {len(mismatches)} tensor shape mismatch(es). "
+                f"The checkpoint and model architecture are incompatible. First mismatches: {preview}"
+            )
         message = load_state_dict(model, checkpoint, strict=False)
         print(f"Warm-started weights from {init_path}: {message}")
         del checkpoint

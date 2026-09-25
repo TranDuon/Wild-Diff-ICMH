@@ -12,6 +12,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from utils.checkpoint_contract import state_dict_shape_mismatches
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = ROOT / "requirements-colab.txt"
@@ -22,6 +24,7 @@ RAM_BERT = RAM_SOURCE / "ram" / "models" / "bert.py"
 RAM_PLUS = RAM_SOURCE / "ram" / "models" / "ram_plus.py"
 RAM_TAGGER = ROOT / "tools" / "precompute_ram_tags.py"
 TRAIN_ENTRYPOINT = ROOT / "train.py"
+TRAIN_CONFIG = ROOT / "configs" / "train_kgalagadi_colab.yaml"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -51,6 +54,33 @@ def requirement_names() -> set[str]:
 
 
 class ColabDependencyContractTests(unittest.TestCase):
+    def test_kgalagadi_author_checkpoint_uses_matching_full_width_control_module(self):
+        config = TRAIN_CONFIG.read_text(encoding="utf-8")
+        self.assertRegex(
+            config,
+            r"(?s)model:.*?params:.*?control_stage_config:\s+params:\s+control_model_ratio: 1\.0",
+        )
+
+        source = TRAIN_ENTRYPOINT.read_text(encoding="utf-8")
+        self.assertIn("_validate_author_checkpoint_contract(init_path, model_config)", source)
+        self.assertIn("do not suppress control-model tensor size mismatches", source)
+
+    def test_checkpoint_shape_contract_reports_shared_tensor_mismatch(self):
+        class ShapedValue:
+            def __init__(self, shape):
+                self.shape = shape
+
+        class Model:
+            def state_dict(self):
+                return {"weight": ShapedValue((2, 4))}
+
+        checkpoint = {"state_dict": {"weight": ShapedValue((2, 3))}}
+
+        self.assertEqual(
+            state_dict_shape_mismatches(Model(), checkpoint),
+            [("weight", (2, 3), (2, 4))],
+        )
+
     def test_ram_plus_inference_does_not_download_a_bert_tokenizer(self):
         source = RAM_PLUS.read_text(encoding="utf-8")
         self.assertIn("if stage == 'train_from_scratch'", source)

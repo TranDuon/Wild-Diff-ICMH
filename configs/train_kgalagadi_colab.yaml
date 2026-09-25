@@ -26,6 +26,13 @@ model:
   params:
     # Must match the selected authors' checkpoint folder (2/4/8/16/32).
     l_bpp_weight: ${oc.env:BPP_WEIGHT,2}
+    # The published checkpoints used by this notebook live under
+    # CNscale1.0_* and therefore require the full-width control module.
+    # Keeping the base config's experimental 0.2 ratio would change every
+    # control/zero-convolution channel width and make the checkpoint unloadable.
+    control_stage_config:
+      params:
+        control_model_ratio: 1.0
     external_text_conditioning: true
     roi_loss_enabled: false
     roi_semantic_enabled: false
