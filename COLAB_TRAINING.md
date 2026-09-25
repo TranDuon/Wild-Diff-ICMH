@@ -52,7 +52,7 @@ Mỗi đầu session, copy ảnh cần dùng từ Drive sang SSD `/content/data`
 ```bash
 pip install -q -r requirements-colab.txt
 pip install -q --no-deps --no-build-isolation compressai==1.2.8
-pip install -q --no-deps -e src/recognize-anything
+pip install -q --no-deps --force-reinstall src/recognize-anything
 ```
 
 `requirements-colab.txt` phải chứa đủ dependency runtime/build không phải Torch của
@@ -61,6 +61,8 @@ cố ý dùng `--no-deps`. Notebook sinh file requirements tạm bỏ pin NumPy/
 giữ binary stack có sẵn của Colab, đặc biệt trên Python 3.13/NumPy 2.
 Cell cũng ghim các phiên bản NumPy/SciPy/Torch/Torchvision hiện có bằng constraints,
 kiểm tra chúng không đổi sau cài đặt, rồi smoke-import các module chính của CompressAI.
+Recognize Anything được cài thành package thường thay vì editable package: kernel
+Jupyter đang chạy nhìn thấy `ram` ngay sau pip mà không cần restart để đọc lại `.pth`.
 
 Không cài lại `torch`, `torchvision` hoặc xFormers bằng một wheel tùy ý. Code
 đã dùng `scaled_dot_product_attention` có sẵn trong PyTorch 2 nên xFormers

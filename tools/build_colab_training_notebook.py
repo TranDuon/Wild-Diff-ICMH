@@ -125,9 +125,10 @@ cells = [
         ], check=True)
         subprocess.run([
             sys.executable, '-m', 'pip', 'install', '-q', '--no-deps',
-            '-e', 'src/recognize-anything',
+            '--force-reinstall', 'src/recognize-anything',
         ], cwd=REPO, check=True)
 
+        import importlib
         import numpy as np
         import numpy.random as npr
         import scipy
@@ -138,6 +139,12 @@ cells = [
         import compressai.entropy_models
         import compressai.losses
         import compressai.zoo
+
+        # A pip subprocess can add files after this Jupyter kernel initialized.
+        # Refresh import caches so the freshly installed vendored package is
+        # visible immediately, without requiring a runtime restart.
+        importlib.invalidate_caches()
+        import ram
         from model.lfgcm import TagGCM
 
         core_versions_after = {
@@ -155,6 +162,7 @@ cells = [
         print('SciPy:', scipy.__version__)
         print('Torch:', torch.__version__, torch.version.cuda)
         print('PyG:', torch_geometric.__version__)
+        print('RAM package:', ram.__file__)
         print('Core packages preserved:', core_versions_after)
         print('GPU:', gpu.name, f'{gpu.total_memory / 2**30:.1f} GiB')
         print('Kiểm tra numpy.random:', npr.rand(3))
