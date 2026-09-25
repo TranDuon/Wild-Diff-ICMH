@@ -74,14 +74,23 @@ cells = [
         """
         ## Bước 3 — Cài dependencies an toàn (mỗi runtime mới)
 
-        Cell này chủ động giữ nguyên NumPy/SciPy có sẵn của Colab, cài thêm
-        `torch-geometric`, rồi import `TagGCM` để bắt lỗi ngay tại đây.
+        Cell này chủ động giữ nguyên NumPy/SciPy/Torch có sẵn của Colab,
+        cài đủ dependency runtime của CompressAI, rồi import `TagGCM` để bắt lỗi ngay tại đây.
         """
     ),
     code(
         """
         source_requirements = REPO / 'requirements-colab.txt'
         safe_requirements = Path('/content/requirements-colab-safe.txt')
+        core_constraints = Path('/content/colab-core-constraints.txt')
+
+        from importlib import metadata as importlib_metadata
+
+        core_distributions = ('numpy', 'scipy', 'torch', 'torchvision')
+        core_versions_before = {
+            name: importlib_metadata.version(name)
+            for name in core_distributions
+        }
 
         filtered_lines = []
         for line in source_requirements.read_text(encoding='utf-8').splitlines():
@@ -96,17 +105,23 @@ cells = [
             encoding='utf-8',
         )
 
+        core_constraints.write_text(
+            '\\n'.join(
+                f'{name}=={version}'
+                for name, version in core_versions_before.items()
+            ) + '\\n',
+            encoding='utf-8',
+        )
+
         subprocess.run([
             sys.executable, '-m', 'pip', 'install', '-q',
             '-r', str(safe_requirements),
+            '-c', str(core_constraints),
         ], check=True)
         subprocess.run([
-            sys.executable, '-m', 'pip', 'install', '-q', '--no-deps',
+            sys.executable, '-m', 'pip', 'install', '-q',
+            '--no-deps', '--no-build-isolation',
             'compressai==1.2.8',
-        ], check=True)
-        subprocess.run([
-            sys.executable, '-m', 'pip', 'install', '-q', '--no-deps',
-            'torch-geometric>=2.6,<3',
         ], check=True)
         subprocess.run([
             sys.executable, '-m', 'pip', 'install', '-q', '--no-deps',
@@ -118,8 +133,21 @@ cells = [
         import scipy
         import torch
         import torch_geometric
+        import pytorch_msssim
+        import compressai.ans
+        import compressai.entropy_models
+        import compressai.losses
+        import compressai.zoo
         from model.lfgcm import TagGCM
 
+        core_versions_after = {
+            name: importlib_metadata.version(name)
+            for name in core_distributions
+        }
+        assert core_versions_after == core_versions_before, (
+            'Dependency install changed Colab core packages: '
+            f'before={core_versions_before}, after={core_versions_after}'
+        )
         assert torch.cuda.is_available(), 'Vào Runtime > Change runtime type > chọn GPU'
         gpu = torch.cuda.get_device_properties(0)
         print('Python:', sys.version.split()[0])
@@ -127,6 +155,7 @@ cells = [
         print('SciPy:', scipy.__version__)
         print('Torch:', torch.__version__, torch.version.cuda)
         print('PyG:', torch_geometric.__version__)
+        print('Core packages preserved:', core_versions_after)
         print('GPU:', gpu.name, f'{gpu.total_memory / 2**30:.1f} GiB')
         print('Kiểm tra numpy.random:', npr.rand(3))
         print('THÀNH CÔNG: môi trường và TagGCM đã sẵn sàng.')

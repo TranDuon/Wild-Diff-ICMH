@@ -1,20 +1,31 @@
 # Install this file on top of Colab's preinstalled torch/torchvision.
-# Install CompressAI separately with --no-deps (see COLAB_TRAINING.md).
+# It includes CompressAI's non-Torch runtime/build dependency closure because
+# CompressAI itself is installed with --no-deps (see COLAB_TRAINING.md).
 einops>=0.8,<1
 fairscale>=0.4.13,<0.5
 kornia>=0.7,<1
-numpy>=1.26,<2.0
+matplotlib>=3.7,<4
+# Python 3.13 Colab already provides NumPy 2; NumPy 1.26 has no cp313 wheel.
+numpy>=1.26,<2.0; python_version < "3.13"
 omegaconf==2.3.0
 open_clip_torch>=2.22,<4
 openai_clip==1.0.1
 opencv_python_headless>=4.8,<5
+pandas>=2,<3
 Pillow>=10.4,<13
+pybind11>=2.13.6,<4
 pyiqa>=0.1.15,<0.2
+pytorch-msssim>=1.0,<2
 scipy>=1.11,<2
+setuptools>=68
 lightning>=2.6,<3
 thop==0.1.1.post2209072238
 timm>=0.9.7,<2
+tomli>=2.2.1,<3
+torch-geometric>=2.6,<3
 tqdm>=4.66,<5
 transformers>=4.41,<6
+typing-extensions>=4
 ultralytics_thop==2.0.0
+wheel>=0.32
 huggingface_hub>=0.23,<2
