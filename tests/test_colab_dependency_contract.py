@@ -29,6 +29,7 @@ DDPM_SOURCE = ROOT / "ldm" / "models" / "diffusion" / "ddpm.py"
 AUTOENCODER_SOURCE = ROOT / "ldm" / "models" / "autoencoder.py"
 ENCODERS_SOURCE = ROOT / "ldm" / "modules" / "encoders" / "modules.py"
 DIFFUSION_UTIL_SOURCE = ROOT / "ldm" / "modules" / "diffusionmodules" / "util.py"
+RES_BLOCK_SOURCE = ROOT / "model" / "layers" / "res_blk.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -112,6 +113,64 @@ class ColabDependencyContractTests(unittest.TestCase):
         self.assertIn(input_tensor, captured)
         self.assertIn(trainable_parameter, captured)
         self.assertNotIn(frozen_parameter, captured)
+
+    def test_sft_skips_redundant_adaptive_pool_for_matching_shapes(self):
+        forward_method = self._class_method(RES_BLOCK_SOURCE, "SFT", "forward")
+
+        class FakeTensor:
+            def __init__(self, shape):
+                self.shape = tuple(shape)
+
+            def size(self):
+                return self.shape
+
+            def __add__(self, other):
+                return FakeTensor(self.shape)
+
+            __radd__ = __add__
+
+            def __mul__(self, other):
+                return FakeTensor(self.shape)
+
+        class FakeFunctional:
+            calls = []
+
+            @classmethod
+            def adaptive_avg_pool2d(cls, value, output_size):
+                cls.calls.append((value.shape, tuple(output_size)))
+                return FakeTensor(value.shape[:-2] + tuple(output_size))
+
+        namespace = {"F": FakeFunctional}
+        exec(
+            compile(
+                ast.Module(body=[forward_method], type_ignores=[]),
+                str(RES_BLOCK_SOURCE),
+                "exec",
+            ),
+            namespace,
+        )
+
+        class SFTStub:
+            forward = namespace["forward"]
+            mlp_shared = staticmethod(lambda value: value)
+            mlp_gamma = staticmethod(lambda value: value)
+            mlp_beta = staticmethod(lambda value: value)
+
+        module = SFTStub()
+        x = FakeTensor((2, 64, 32, 32))
+
+        matching_ref = FakeTensor((2, 64, 32, 32))
+        result = module.forward(x, matching_ref)
+        self.assertEqual(result.shape, x.shape)
+        self.assertEqual(FakeFunctional.calls, [])
+
+        mismatched_ref = FakeTensor((2, 64, 64, 64))
+        result = module.forward(x, mismatched_ref)
+        self.assertEqual(result.shape, x.shape)
+        self.assertEqual(
+            FakeFunctional.calls,
+            [((2, 64, 64, 64), (32, 32))],
+        )
 
     def test_active_training_hooks_match_lightning_2_signatures(self):
         train_start = self._class_method(

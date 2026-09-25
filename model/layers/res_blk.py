@@ -122,7 +122,12 @@ class SFT(nn.Module):
         self.mlp_beta = nn.Conv2d(nhidden, x_nc, kernel_size=ks, padding=pw)
 
     def forward(self, x, ref):
-        ref = F.adaptive_avg_pool2d(ref, x.size()[2:])
+        target_size = x.shape[-2:]
+        # The codec constructs the SFT reference at the same scale as x.
+        # Avoid recording a redundant adaptive-pool node: its CUDA backward
+        # has no deterministic implementation on current PyTorch/Colab.
+        if ref.shape[-2:] != target_size:
+            ref = F.adaptive_avg_pool2d(ref, target_size)
         actv = self.mlp_shared(ref)
         gamma = self.mlp_gamma(actv)
         beta = self.mlp_beta(actv)

@@ -2,7 +2,7 @@
 status: awaiting_human_verification
 trigger: "Colab notebook Step 7 smoke-test command invokes train.py and immediately exits status 1; the notebook shows only the parent CalledProcessError."
 created: 2026-09-25
-updated: 2026-09-25T23:30:00+07:00
+updated: 2026-09-26T00:02:00+07:00
 ---
 
 ## Symptoms
@@ -17,20 +17,19 @@ updated: 2026-09-25T23:30:00+07:00
 
 bug_class: bohrbug
 reasoning_checkpoint:
-  hypothesis: "The custom gradient-checkpoint wrapper passes every module parameter to CheckpointFunction, including the explicitly frozen SD backbone parameters. PyTorch 2.11 rejects requires_grad=False tensors in torch.autograd.grad even with allow_unused=True."
+  hypothesis: "Every SFT block unconditionally applies adaptive_avg_pool2d to its reference tensor, even though the codec architecture constructs ref and x with identical spatial dimensions. Its CUDA backward has no deterministic implementation, so Lightning deterministic=true rejects the first backward pass."
   confirming_evidence:
-    - "The new Colab run completes forward and fails specifically at CheckpointFunction.backward line 149 inside torch.autograd.grad with `One of the differentiated Tensors does not require grad`."
-    - "Every checkpoint input tensor is detached and re-enabled for grad at line 141, so the only non-grad differentiated inputs can be ctx.input_params."
-    - "DiffEIC intentionally sets the frozen SD backbone parameters to requires_grad=False, while ResBlock/AttentionBlock/BasicTransformerBlock pass self.parameters() unfiltered into the wrapper."
-  falsification_test: "A focused wrapper test must prove that a frozen parameter is absent from CheckpointFunction.apply while a trainable parameter and the checkpoint input remain present."
-  fix_rationale: "Filter only explicit checkpoint parameter inputs by requires_grad; frozen weights remain visible to run_function through its module closure, while checkpoint inputs remain differentiable so gradient flow through the frozen backbone is preserved."
-  blind_spots: "PyTorch is not installed in the local Windows test environment, so the focused regression exercises the wrapper contract without CUDA; the final full backward pass requires Colab verification."
+    - "The new Colab run completes forward and reaches backward, which fails specifically with `adaptive_avg_pool2d_backward_cuda does not have a deterministic implementation` while trainer deterministic=true is active."
+    - "Repository search finds exactly one training-path adaptive_avg_pool2d call: SFT.forward in model/layers/res_blk.py."
+    - "All SFT call sites construct ref and x at matching scales for the 256x256 training crop: encoder 1/8 and 1/16, hyper-encoder 1/16, 1/32 and 1/64, and decoder 1/16 and 1/8. The unconditional pool is therefore a no-op in the supported training path."
+  falsification_test: "A focused SFT test must prove that equal spatial shapes bypass adaptive_avg_pool2d while mismatched shapes retain the authors' original resize behavior."
+  fix_rationale: "Skip only the mathematically redundant adaptive pool when ref already has the target shape. This preserves exact values and gradients, keeps deterministic training enabled, and retains the original fallback for unexpected shape mismatches."
+  blind_spots: "The local environment cannot execute the CUDA backward; final confirmation still requires the Colab L4 smoke test. A future unsupported crop producing mismatched SFT shapes would still use adaptive pooling and could require a separate deterministic resize policy."
   candidate_causes:
-    - "code: the vendored Stable-Diffusion checkpoint helper assumes every module parameter requires gradients."
-    - "architecture: DiffEIC now correctly freezes the SD backbone rather than merely excluding it from the optimizer."
-    - "environment: PyTorch 2.11 validates differentiated inputs and rejects requires_grad=False tensors even with allow_unused=True."
-  and_gate: "yes — the failure requires both explicit backbone freezing and the legacy unfiltered custom checkpoint parameter list; removing either condition avoids this exact exception."
-next_action: "Review and commit/push the frozen-parameter checkpoint fix, pull it in Colab via Step 2, then rerun only Step 7 and confirm backward completes and the 20-step smoke test advances."
+    - "code: SFT performs an unconditional adaptive pool even when source and target dimensions are identical."
+    - "config/environment: Lightning deterministic=true enables PyTorch's hard error for CUDA operations without deterministic backward implementations."
+  and_gate: "yes — the crash requires both the redundant adaptive pooling node in the graph and strict deterministic CUDA execution; preserving reproducibility means removing the redundant node rather than weakening the trainer setting."
+next_action: "Review and commit/push the SFT equal-shape guard, pull it in Colab via Step 2, then rerun only Step 7 and confirm backward advances beyond batch 0 through the 20-step smoke test."
 
 ## Evidence
 
@@ -94,6 +93,16 @@ next_action: "Review and commit/push the frozen-parameter checkpoint fix, pull i
   found: The regression failed before the production change because the frozen fake parameter reached `CheckpointFunction.apply`; after filtering on `requires_grad`, the focused test passes, 32 adjacent tests pass, compileall succeeds, and `git diff --check` reports no errors.
   implication: The fix preserves gradients through checkpoint input tensors and trainable parameters while excluding only invalid frozen autograd inputs.
 
+- timestamp: 2026-09-25
+  checked: Full traceback after the frozen-parameter checkpoint fix, all adaptive pooling call sites, and the spatial scale construction of every SFT caller.
+  found: The forward pass and checkpoint backward now proceed until PyTorch rejects `adaptive_avg_pool2d_backward_cuda` under strict deterministic execution. The sole project call is unconditional in SFT.forward, while every supported 256x256 codec path provides ref and x at the same spatial size, making that adaptive pool a value-preserving no-op.
+  implication: The deterministic failure can be removed without weakening reproducibility or changing model math by bypassing only equal-shape pooling.
+
+- timestamp: 2026-09-25
+  checked: Test-first SFT regression, minimal equal-shape guard, full test suite, compileall, and whitespace validation.
+  found: Before the fix the regression recorded an adaptive-pool call for matching 32x32 tensors and failed. After the fix, matching shapes bypass the call while a 64x64 reference still follows the original adaptive resize path; 69 tests pass, 2 skip, compileall succeeds, and git diff --check reports no whitespace errors.
+  implication: The supported training path no longer records the nondeterministic CUDA backward node, and unexpected mismatched inputs retain the authors' prior behavior.
+
 ## Eliminated
 
 - Missing RAM++ tags: Step 6 completed 971/971 and wrote `KGA_A01.jsonl` on Drive.
@@ -101,15 +110,15 @@ next_action: "Review and commit/push the frozen-parameter checkpoint fix, pull i
 
 ## Resolution
 
-- root_cause: After the prior startup and OpenCLIP fixes allowed the first forward pass to complete, backward failed because the legacy custom checkpoint wrapper registered frozen SD parameters as differentiated inputs; PyTorch 2.11 rejects those requires_grad=False tensors regardless of allow_unused=True.
-- fix: Keep frozen parameters available through each module's run-function closure, but pass only requires_grad=True parameters into CheckpointFunction and torch.autograd.grad; continue differentiating checkpoint input tensors so gradients flow into trainable upstream/control modules.
+- root_cause: After the prior fixes allowed backward to advance, SFT.forward unconditionally inserted adaptive_avg_pool2d even when ref and x already had identical spatial dimensions. Lightning deterministic=true enables strict PyTorch deterministic algorithms, and CUDA adaptive_avg_pool2d backward has no deterministic implementation, so the redundant node aborted batch 0.
+- fix: Preserve strict deterministic training and exact model math by bypassing adaptive_avg_pool2d when ref already matches x spatially; retain the original adaptive resize behavior only for unexpected mismatched shapes.
 - verification:
-    target_test: {result: pass, command: "python -m pytest tests/test_colab_dependency_contract.py::ColabDependencyContractTests::test_openclip_text_encoder_honors_transformer_tensor_layout -q"}
-    mutation_check: {result: skipped, reason_if_skipped: "Stryker is not applicable to this Python repository; revert-and-reconfirm exercises the exact layout branch instead."}
+    target_test: {result: pass, command: "python -m pytest tests/test_colab_dependency_contract.py::ColabDependencyContractTests::test_sft_skips_redundant_adaptive_pool_for_matching_shapes -q", pre_fix_result: "failed because adaptive pooling was called for equal 32x32 shapes"}
+    mutation_check: {result: skipped, reason_if_skipped: "Python repository has no configured mutation runner; test-first red/green execution exercised the exact guard."}
     no_op_deletion: {result: pass, deletion_justified_by_rca: false}
-    adjacent_tests: {result: pass, suites_run: ["tests/test_colab_dependency_contract.py", "tests/data/test_split_check.py"], outcome: "32 passed"}
-    revert_and_reconfirm: {result: pass, bug_returned_on_revert: true, fixed_on_reapply: true}
-    compile: {result: pass, command: "python -m compileall -q ldm/modules/encoders/modules.py tests/test_colab_dependency_contract.py"}
+    adjacent_tests: {result: pass, suites_run: ["full pytest suite"], outcome: "69 passed, 2 skipped"}
+    revert_and_reconfirm: {result: pass, bug_returned_on_revert: true, fixed_on_reapply: true, evidence: "target regression failed before the production change and passed afterward"}
+    compile: {result: pass, command: "python -m compileall -q model/layers/res_blk.py tests/test_colab_dependency_contract.py"}
     whitespace: {result: pass, command: "git diff --check"}
     guardrail_verdict: accepted
-- files_changed: [configs/train_kgalagadi_colab.yaml, train.py, utils/checkpoint_contract.py, ldm/models/diffusion/ddpm.py, ldm/models/autoencoder.py, ldm/modules/encoders/modules.py, tests/test_colab_dependency_contract.py]
+- files_changed: [model/layers/res_blk.py, tests/test_colab_dependency_contract.py]
