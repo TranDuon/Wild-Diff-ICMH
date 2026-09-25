@@ -1,6 +1,13 @@
 ---
-gsd_state_version: '1.0'
+gsd_state_version: "1.0"
+current_phase: 1
+current_phase_name: Khung xương end-to-end tối thiểu + vá lỗi chặn
 status: planning
+stopped_at: Roadmap tạo xong, chờ user duyệt (approval gate do orchestrator quản lý)
+last_updated: "2026-09-25T05:46:45.381Z"
+last_activity: 2026-09-16
+last_activity_desc: "Completed quick task 260916-sxk: Bước 1 fine-tune camera trap (manifest dữ liệu + downloader + split_check)"
+state_head: 1b2012461fa4eb79a7bd527264046254cc857b7b
 progress:
   total_phases: 6
   completed_phases: 0
@@ -32,6 +39,7 @@ Progress: [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: - min
 - Total execution time: 0h
@@ -43,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: -
 - Trend: -
 
@@ -76,6 +85,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260916-sxk | Bước 1 fine-tune camera trap: manifest Serengeti train/val + Kgalagadi test, downloader, split_check | 2026-09-16 | 3d9b82b | [260916-sxk-buoc-1-fine-tune-camera-trap-dung-manife](./quick/260916-sxk-buoc-1-fine-tune-camera-trap-dung-manife/) |
+| 2 | Sắp xếp notebook Colab theo thứ tự và sửa dependency/progress | 2026-09-25 | 1b20124 | — |
 
 ## Deferred Items
 
