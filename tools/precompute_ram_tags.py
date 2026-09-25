@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +74,31 @@ def _completed_ids(output):
     return completed
 
 
+def _validate_inputs(rows, data_root, checkpoint):
+    """Fail before model allocation with a useful, bounded diagnostic."""
+    checkpoint = Path(checkpoint)
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"RAM++ checkpoint not found: {checkpoint}")
+    if checkpoint.stat().st_size < 1024 * 1024:
+        raise RuntimeError(
+            f"RAM++ checkpoint looks incomplete ({checkpoint.stat().st_size} bytes): "
+            f"{checkpoint}"
+        )
+
+    data_root = Path(data_root)
+    missing = [
+        data_root / row["relative_path"]
+        for row in rows
+        if not (data_root / row["relative_path"]).is_file()
+    ]
+    if missing:
+        sample = "\n".join(f"  - {path}" for path in missing[:5])
+        raise FileNotFoundError(
+            f"Missing {len(missing)}/{len(rows)} selected images under {data_root}. "
+            f"First missing paths:\n{sample}"
+        )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default="data/manifests/kgalagadi_site_split.jsonl")
@@ -103,7 +130,18 @@ def main(argv=None):
             if stream.read(1) != b"\n":
                 stream.write(b"\n")
 
+    print(
+        f"[RAM tags 1/4] Preflight: {len(pending_rows)} pending images, "
+        f"batch={args.batch_size}, workers={args.num_workers}",
+        flush=True,
+    )
+    _validate_inputs(pending_rows, args.data_root, args.checkpoint)
+    print(
+        f"[RAM tags 2/4] Loading checkpoint: {args.checkpoint}",
+        flush=True,
+    )
     model = TagGCM(enabled=True, pretrained=args.checkpoint).to(args.device).eval()
+    print(f"[RAM tags 3/4] Model ready on {args.device}", flush=True)
     loader = DataLoader(
         _ImageRows(pending_rows, args.data_root),
         batch_size=args.batch_size,
@@ -115,6 +153,7 @@ def main(argv=None):
     )
 
     with output.open("a", encoding="utf-8", newline="\n") as stream:
+        print(f"[RAM tags 4/4] Writing resumable output: {output}", flush=True)
         with tqdm(
             total=len(rows),
             initial=len(rows) - len(pending_rows),
@@ -151,4 +190,11 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        print("\nRAM++ TAGGING FAILED — full traceback follows:", file=sys.stderr)
+        traceback.print_exc()
+        raise SystemExit(1)

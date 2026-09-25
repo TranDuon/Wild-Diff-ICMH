@@ -133,8 +133,17 @@ class RAM_plus(nn.Module):
             self.visual_encoder, vision_width = create_vit(
                 vit, image_size, vit_grad_ckpt, vit_ckpt_layer)
 
-        # create tokenzier
-        self.tokenizer = init_tokenizer(text_encoder_type)
+        # RAM++ inference never tokenizes text: generate_tag/generate_index only
+        # consume image features and the checkpoint's frozen tag embeddings.  The
+        # upstream constructor nevertheless downloaded ``bert-base-uncased`` on
+        # every startup.  That makes offline/unauthenticated Colab runs fail
+        # before the checkpoint is loaded.  Keep the tokenizer only for the
+        # from-scratch training path where it is genuinely needed.
+        self.tokenizer = (
+            init_tokenizer(text_encoder_type)
+            if stage == 'train_from_scratch'
+            else None
+        )
 
         self.delete_tag_index = delete_tag_index
 
@@ -149,7 +158,8 @@ class RAM_plus(nn.Module):
         q2l_config.encoder_width = 512
         self.tagging_head = BertModel(config=q2l_config,
                                       add_pooling_layer=False)
-        self.tagging_head.resize_token_embeddings(len(self.tokenizer))
+        if self.tokenizer is not None:
+            self.tagging_head.resize_token_embeddings(len(self.tokenizer))
 
         if stage == 'train_from_scratch':
             self.label_embed = nn.Parameter(torch.load(f'{CONFIG_PATH}/data/frozen_tag_embedding/ram_plus_tag_embedding_class_4585_des_51.pth',map_location='cpu').float())

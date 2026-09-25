@@ -350,16 +350,47 @@ cells = [
             print(f'Tags đã đủ: {completed_count}/{len(site_rows)} — bỏ qua.')
         else:
             print(f'Tiếp tục tạo tags: {completed_count}/{len(site_rows)} đã có.')
+            gpu_memory_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
+            # RAM++/Swin-L is large.  Batch 8 can OOM on the 16 GiB T4 that
+            # Colab sometimes assigns even when a notebook was tested on L4.
+            ram_batch_size = 1 if gpu_memory_gib < 20 else 2
+            ram_num_workers = min(2, os.cpu_count() or 1)
+            tag_log_path = DRIVE_ROOT / 'logs' / f'ram_tags_{SITE.replace(":", "_")}.log'
+            tag_log_path.parent.mkdir(parents=True, exist_ok=True)
+            print(
+                f'RAM++: GPU={gpu_memory_gib:.1f} GiB, batch={ram_batch_size}, '
+                f'workers={ram_num_workers}'
+            )
+            print('Log chi tiết:', tag_log_path)
             tag_command = [
                 sys.executable, '-u', 'tools/precompute_ram_tags.py',
                 '--data-root', str(LOCAL_IMAGES),
                 '--checkpoint', str(RAM_CKPT),
                 '--site-id', SITE,
                 '--output', str(TAGS_PATH),
-                '--batch-size', '8',
-                '--num-workers', '4',
+                '--batch-size', str(ram_batch_size),
+                '--num-workers', str(ram_num_workers),
             ]
-            subprocess.run(tag_command, cwd=REPO, check=True)
+            with tag_log_path.open('a', encoding='utf-8') as log_stream:
+                process = subprocess.Popen(
+                    tag_command,
+                    cwd=REPO,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                assert process.stdout is not None
+                for line in process.stdout:
+                    print(line, end='')
+                    log_stream.write(line)
+                    log_stream.flush()
+                return_code = process.wait()
+            if return_code:
+                raise RuntimeError(
+                    f'RAM++ tagging dừng với mã {return_code}. '
+                    f'Traceback đầy đủ đã lưu tại {tag_log_path}'
+                )
 
         print('File tags:', TAGS_PATH)
         """

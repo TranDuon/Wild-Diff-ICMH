@@ -19,6 +19,8 @@ GENERATOR = ROOT / "tools" / "build_colab_training_notebook.py"
 NOTEBOOK = ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb"
 RAM_SOURCE = ROOT / "src" / "recognize-anything"
 RAM_BERT = RAM_SOURCE / "ram" / "models" / "bert.py"
+RAM_PLUS = RAM_SOURCE / "ram" / "models" / "ram_plus.py"
+RAM_TAGGER = ROOT / "tools" / "precompute_ram_tags.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -48,6 +50,53 @@ def requirement_names() -> set[str]:
 
 
 class ColabDependencyContractTests(unittest.TestCase):
+    def test_ram_plus_inference_does_not_download_a_bert_tokenizer(self):
+        source = RAM_PLUS.read_text(encoding="utf-8")
+        self.assertIn("if stage == 'train_from_scratch'", source)
+        self.assertIn("else None", source)
+        self.assertIn("if self.tokenizer is not None:", source)
+
+        tree = ast.parse(source)
+        tokenizer_calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "init_tokenizer"
+        ]
+        self.assertEqual(len(tokenizer_calls), 1)
+
+    def test_ram_tag_preflight_reports_missing_images_before_model_load(self):
+        tree = ast.parse(RAM_TAGGER.read_text(encoding="utf-8"))
+        validate_node = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_validate_inputs"
+        )
+        namespace = {"Path": Path}
+        exec(compile(ast.Module(body=[validate_node], type_ignores=[]), str(RAM_TAGGER), "exec"), namespace)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / "ram.pth"
+            checkpoint.write_bytes(b"x" * (1024 * 1024))
+            rows = [{"relative_path": "site/missing.jpg"}]
+            with self.assertRaisesRegex(FileNotFoundError, r"(?s)Missing 1/1.*missing\.jpg"):
+                namespace["_validate_inputs"](rows, root / "images", checkpoint)
+
+    def test_generated_step_six_is_t4_safe_and_preserves_child_traceback(self):
+        generator = GENERATOR.read_text(encoding="utf-8")
+        notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+        code = "\n".join(
+            cell["source"]
+            for cell in notebook["cells"]
+            if cell["cell_type"] == "code"
+        )
+
+        for source in (generator, code):
+            self.assertIn("ram_batch_size = 1 if gpu_memory_gib < 20 else 2", source)
+            self.assertNotIn("'--batch-size', '8'", source)
+            self.assertIn("stderr=subprocess.STDOUT", source)
+            self.assertIn("tag_log_path", source)
+
     def test_ram_bert_uses_current_transformers_helper_modules(self):
         tree = ast.parse(RAM_BERT.read_text(encoding="utf-8"))
         imports = {
