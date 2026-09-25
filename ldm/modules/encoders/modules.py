@@ -221,9 +221,19 @@ class FrozenOpenCLIPEmbedder(AbstractEncoder):
     def encode_with_transformer(self, text):
         x = self.model.token_embedding(text)  # [batch_size, n_ctx, d_model]
         x = x + self.model.positional_embedding
-        x = x.permute(1, 0, 2)  # NLD -> LND
+        transformer = self.model.transformer
+        batch_first = getattr(transformer, "batch_first", None)
+        if batch_first is None and transformer.resblocks:
+            batch_first = getattr(
+                getattr(transformer.resblocks[0], "attn", None),
+                "batch_first",
+                False,
+            )
+        if not batch_first:
+            x = x.permute(1, 0, 2)  # NLD -> LND for legacy OpenCLIP
         x = self.text_transformer_forward(x, attn_mask=self.model.attn_mask)
-        x = x.permute(1, 0, 2)  # LND -> NLD
+        if not batch_first:
+            x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.model.ln_final(x)
         return x
 

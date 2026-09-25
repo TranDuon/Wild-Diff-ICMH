@@ -27,6 +27,7 @@ TRAIN_ENTRYPOINT = ROOT / "train.py"
 TRAIN_CONFIG = ROOT / "configs" / "train_kgalagadi_colab.yaml"
 DDPM_SOURCE = ROOT / "ldm" / "models" / "diffusion" / "ddpm.py"
 AUTOENCODER_SOURCE = ROOT / "ldm" / "models" / "autoencoder.py"
+ENCODERS_SOURCE = ROOT / "ldm" / "modules" / "encoders" / "modules.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -109,6 +110,90 @@ class ColabDependencyContractTests(unittest.TestCase):
             restarted_from_ckpt = False
 
         self.assertIsNone(namespace["on_train_batch_start"](ModelStub(), {}, 0))
+
+    def test_openclip_text_encoder_honors_transformer_tensor_layout(self):
+        encode_method = self._class_method(
+            ENCODERS_SOURCE, "FrozenOpenCLIPEmbedder", "encode_with_transformer"
+        )
+        forward_method = self._class_method(
+            ENCODERS_SOURCE, "FrozenOpenCLIPEmbedder", "text_transformer_forward"
+        )
+
+        class FakeTensor:
+            def __init__(self, shape):
+                self.shape = tuple(shape)
+
+            def __add__(self, other):
+                return FakeTensor(self.shape)
+
+            def permute(self, *dimensions):
+                return FakeTensor(tuple(self.shape[index] for index in dimensions))
+
+        class FakeTorch:
+            Tensor = FakeTensor
+
+            class jit:
+                @staticmethod
+                def is_scripting():
+                    return False
+
+        namespace = {"torch": FakeTorch, "checkpoint": None}
+        exec(
+            compile(
+                ast.Module(body=[encode_method, forward_method], type_ignores=[]),
+                str(ENCODERS_SOURCE),
+                "exec",
+            ),
+            namespace,
+        )
+
+        class Block:
+            def __init__(self, expected_shape):
+                self.expected_shape = expected_shape
+
+            def __call__(self, value, attn_mask=None):
+                if value.shape != self.expected_shape:
+                    raise RuntimeError(
+                        f"attention received {value.shape}, expected {self.expected_shape}"
+                    )
+                self.seen_mask = attn_mask
+                return value
+
+        class Transformer:
+            def __init__(self, *, batch_first, expected_shape):
+                self.batch_first = batch_first
+                self.grad_checkpointing = False
+                self.resblocks = [Block(expected_shape)]
+
+        class Model:
+            def __init__(self, *, batch_first, expected_shape):
+                self.transformer = Transformer(
+                    batch_first=batch_first, expected_shape=expected_shape
+                )
+                self.token_embedding = lambda tokens: FakeTensor((1, 77, 4))
+                self.positional_embedding = FakeTensor((77, 4))
+                self.attn_mask = FakeTensor((77, 77))
+                self.ln_final = lambda value: value
+
+        class Encoder:
+            encode_with_transformer = namespace["encode_with_transformer"]
+            text_transformer_forward = namespace["text_transformer_forward"]
+            layer_idx = 0
+
+        for batch_first, block_shape in (
+            (True, (1, 77, 4)),
+            (False, (77, 1, 4)),
+        ):
+            encoder = Encoder()
+            encoder.model = Model(
+                batch_first=batch_first, expected_shape=block_shape
+            )
+            result = encoder.encode_with_transformer(object())
+            self.assertEqual(result.shape, (1, 77, 4))
+            self.assertEqual(
+                encoder.model.transformer.resblocks[0].seen_mask.shape,
+                (77, 77),
+            )
 
     def test_kgalagadi_author_checkpoint_uses_matching_full_width_control_module(self):
         config = TRAIN_CONFIG.read_text(encoding="utf-8")

@@ -2,7 +2,7 @@
 status: awaiting_human_verification
 trigger: "Colab notebook Step 7 smoke-test command invokes train.py and immediately exits status 1; the notebook shows only the parent CalledProcessError."
 created: 2026-09-25
-updated: 2026-09-25T20:05:00+07:00
+updated: 2026-09-25T22:55:00+07:00
 ---
 
 ## Symptoms
@@ -15,10 +15,22 @@ updated: 2026-09-25T20:05:00+07:00
 
 ## Current Focus
 
-hypothesis: "Confirmed: Lightning 2.6 invokes on_train_batch_start with (batch, batch_idx), but the vendored LatentDiffusion hook still required Lightning-1-era dataloader_idx."
-test: "Remove dataloader_idx from the active hook, make adjacent train-batch-end hook contracts explicit, and regression-test both the exact signatures and a two-argument Lightning-2 call."
-expecting: "Step 7 proceeds past Epoch 0 batch 0 without TypeError and begins optimizer steps."
-next_action: "Commit/push the Lightning hook compatibility fix, pull it in Colab via Step 2, then rerun only Step 7 and confirm the 20-step smoke test advances."
+bug_class: bohrbug
+reasoning_checkpoint:
+  hypothesis: "FrozenOpenCLIPEmbedder unconditionally converts NLD token embeddings to legacy LND layout, while the OpenCLIP version selected by the supported >=2.22,<4 range declares transformer.batch_first=True; a batch of one is therefore interpreted as sequence length 1 and cannot use the canonical 77x77 causal mask."
+  confirming_evidence:
+    - "The Colab traceback reports attn_mask (77,77) but expected (1,1), exactly matching a batch-first attention block receiving LND (77,1,D) for batch size 1."
+    - "The focused regression reproduces the defect: the current method sends (77,1,4) to a transformer declaring batch_first=True and fails, while the input embedding is (1,77,4)."
+    - "The dataset and conditioning chain preserve text as list[str] and tokenize to N x 77, ruling out a one-token RAM tag payload."
+  falsification_test: "If a batch-first transformer stub receives NLD and a legacy transformer stub receives LND after the fix, both must return the same public NLD shape; failure of either case would falsify the compatibility fix."
+  fix_rationale: "Conditionally permuting only for transformers that do not declare batch_first preserves the layout contract of both OpenCLIP API generations and leaves the standard 77x77 causal mask untouched."
+  blind_spots: "The exact Colab OpenCLIP wheel is unavailable locally, so verification uses its public transformer.batch_first contract and a faithful layout stub; final GPU execution remains a human verification step."
+  candidate_causes:
+    - "code: vendored Stable-Diffusion-era encoder hard-codes LND around manually invoked OpenCLIP blocks."
+    - "environment: the broad open_clip_torch>=2.22,<4 constraint resolves to a newer batch-first transformer implementation on Colab."
+    - "data: malformed txt batching was considered, but the dataset returns strings and default collation produces list[str], which tokenizes to N x 77."
+  and_gate: "yes — the failure requires both the hard-coded legacy permutation and a batch-first OpenCLIP implementation; either the old sequence-first dependency or a layout-aware encoder would not fail."
+next_action: "Commit/push the OpenCLIP layout compatibility fix, pull it in Colab via Step 2, then rerun only Step 7 and confirm the smoke test advances beyond the first text-conditioning pass."
 
 ## Evidence
 
@@ -57,6 +69,21 @@ next_action: "Commit/push the Lightning hook compatibility fix, pull it in Colab
   found: `on_train_batch_start` now accepts the Lightning 2 call; train-batch-end hooks explicitly accept `(outputs, batch, batch_idx)`; 30 focused tests pass; compileall and `git diff --check` pass.
   implication: The confirmed hook mismatch is fixed without weakening argument validation or changing model behavior.
 
+- timestamp: 2026-09-25
+  checked: New Step 7 traceback, CameraTrapDataset text output, DiffEIC external-text path, LatentDiffusion conditioning path, and FrozenOpenCLIPEmbedder tensor transforms.
+  found: The dataset returns a string and the DataLoader/conditioning path preserves a list of strings; tokenization produces N x 77 tokens. FrozenOpenCLIPEmbedder then unconditionally permutes NLD embeddings to LND before manually calling OpenCLIP residual blocks. The failing OpenCLIP block uses batch-first MultiheadAttention, so a batch of one is interpreted as target length 1 and rejects the 77x77 causal mask with exactly the observed `(77,77) but should be (1,1)` error.
+  implication: This is an OpenCLIP tensor-layout API compatibility defect in the vendored encoder, not malformed RAM tags or a mask-generation defect.
+
+- timestamp: 2026-09-25
+  checked: Agent-authored focused tensor-layout regression before changing production code.
+  found: The batch-first case deterministically fails because the current encoder sends `(77, 1, 4)` where the block contract requires `(1, 77, 4)`; the failure is at the unconditional NLD-to-LND permutation.
+  implication: The hypothesis is reproduced independently of the large checkpoint/GPU path, and the fix site is localized to `FrozenOpenCLIPEmbedder.encode_with_transformer`.
+
+- timestamp: 2026-09-25
+  checked: Layout-aware encoder patch, focused regression, adjacent Colab/data tests, compileall, diff validation, and revert-and-reconfirm.
+  found: The encoder now preserves NLD for batch-first OpenCLIP and only converts to LND for legacy transformers; the public output stays NLD and the 77x77 mask is unchanged. The focused test passes, 31 adjacent tests pass, compileall and `git diff --check` pass. Temporarily reverting only the production hunk makes the focused test fail with `(77,1,4)` versus `(1,77,4)`; reapplying makes it pass.
+  implication: The minimal layout branch fixes the reproduced cause and retains compatibility with both supported OpenCLIP generations.
+
 ## Eliminated
 
 - Missing RAM++ tags: Step 6 completed 971/971 and wrote `KGA_A01.jsonl` on Drive.
@@ -64,7 +91,15 @@ next_action: "Commit/push the Lightning hook compatibility fix, pull it in Colab
 
 ## Resolution
 
-- root_cause: Step 7 first hid its child traceback; once exposed, it showed that the CNscale1.0 author checkpoint was being loaded into a control module built with the base config's 0.2 width ratio, so all control/zero-convolution channel shapes differed.
-- fix: Preserve the streamed training diagnostics, match the checkpoint's full-width control model, validate checkpoint architecture, and migrate active train-batch hooks to Lightning 2 signatures.
-- verification: `python -m pytest tests/test_colab_dependency_contract.py tests/data/test_split_check.py -q` -> 30 passed; `python -m compileall -q ldm/models/diffusion/ddpm.py ldm/models/autoencoder.py model/diffeic.py model/callbacks.py dataset/data_module.py` -> passed; `git diff --check` -> passed.
-- files_changed: [configs/train_kgalagadi_colab.yaml, train.py, utils/checkpoint_contract.py, ldm/models/diffusion/ddpm.py, ldm/models/autoencoder.py, tests/test_colab_dependency_contract.py]
+- root_cause: The latest first-batch failure required two conditions: the vendored FrozenOpenCLIPEmbedder hard-coded the legacy LND residual-block layout, while Colab resolved the supported OpenCLIP range to a batch-first transformer. With batch size one, attention interpreted the tensor as sequence length one and rejected the unchanged 77x77 causal mask.
+- fix: Preserve the streamed training diagnostics and prior checkpoint/Lightning migrations, then make FrozenOpenCLIPEmbedder inspect the transformer's batch-first contract and permute only for legacy sequence-first implementations. Keep the standard 77x77 attention mask intact.
+- verification:
+    target_test: {result: pass, command: "python -m pytest tests/test_colab_dependency_contract.py::ColabDependencyContractTests::test_openclip_text_encoder_honors_transformer_tensor_layout -q"}
+    mutation_check: {result: skipped, reason_if_skipped: "Stryker is not applicable to this Python repository; revert-and-reconfirm exercises the exact layout branch instead."}
+    no_op_deletion: {result: pass, deletion_justified_by_rca: false}
+    adjacent_tests: {result: pass, suites_run: ["tests/test_colab_dependency_contract.py", "tests/data/test_split_check.py"], outcome: "31 passed"}
+    revert_and_reconfirm: {result: pass, bug_returned_on_revert: true, fixed_on_reapply: true}
+    compile: {result: pass, command: "python -m compileall -q ldm/modules/encoders/modules.py tests/test_colab_dependency_contract.py"}
+    whitespace: {result: pass, command: "git diff --check"}
+    guardrail_verdict: accepted
+- files_changed: [configs/train_kgalagadi_colab.yaml, train.py, utils/checkpoint_contract.py, ldm/models/diffusion/ddpm.py, ldm/models/autoencoder.py, ldm/modules/encoders/modules.py, tests/test_colab_dependency_contract.py]
