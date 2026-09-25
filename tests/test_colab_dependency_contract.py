@@ -25,6 +25,8 @@ RAM_PLUS = RAM_SOURCE / "ram" / "models" / "ram_plus.py"
 RAM_TAGGER = ROOT / "tools" / "precompute_ram_tags.py"
 TRAIN_ENTRYPOINT = ROOT / "train.py"
 TRAIN_CONFIG = ROOT / "configs" / "train_kgalagadi_colab.yaml"
+DDPM_SOURCE = ROOT / "ldm" / "models" / "diffusion" / "ddpm.py"
+AUTOENCODER_SOURCE = ROOT / "ldm" / "models" / "autoencoder.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -54,6 +56,60 @@ def requirement_names() -> set[str]:
 
 
 class ColabDependencyContractTests(unittest.TestCase):
+    @staticmethod
+    def _class_method(path: Path, class_name: str, method_name: str) -> ast.FunctionDef:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        class_node = next(
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == class_name
+        )
+        return next(
+            node for node in class_node.body
+            if isinstance(node, ast.FunctionDef) and node.name == method_name
+        )
+
+    def test_active_training_hooks_match_lightning_2_signatures(self):
+        train_start = self._class_method(
+            DDPM_SOURCE, "LatentDiffusion", "on_train_batch_start"
+        )
+        self.assertEqual(
+            [argument.arg for argument in train_start.args.args],
+            ["self", "batch", "batch_idx"],
+        )
+        self.assertIsNone(train_start.args.vararg)
+        self.assertIsNone(train_start.args.kwarg)
+
+        for path, class_name in (
+            (DDPM_SOURCE, "DDPM"),
+            (AUTOENCODER_SOURCE, "AutoencoderKL"),
+        ):
+            train_end = self._class_method(path, class_name, "on_train_batch_end")
+            self.assertEqual(
+                [argument.arg for argument in train_end.args.args],
+                ["self", "outputs", "batch", "batch_idx"],
+            )
+            self.assertIsNone(train_end.args.vararg)
+            self.assertIsNone(train_end.args.kwarg)
+
+    def test_latent_diffusion_train_start_accepts_lightning_2_call(self):
+        method = self._class_method(
+            DDPM_SOURCE, "LatentDiffusion", "on_train_batch_start"
+        )
+        method.decorator_list = []
+        namespace = {}
+        exec(
+            compile(ast.Module(body=[method], type_ignores=[]), str(DDPM_SOURCE), "exec"),
+            namespace,
+        )
+
+        class ModelStub:
+            scale_by_std = False
+            current_epoch = 0
+            global_step = 0
+            restarted_from_ckpt = False
+
+        self.assertIsNone(namespace["on_train_batch_start"](ModelStub(), {}, 0))
+
     def test_kgalagadi_author_checkpoint_uses_matching_full_width_control_module(self):
         config = TRAIN_CONFIG.read_text(encoding="utf-8")
         self.assertRegex(

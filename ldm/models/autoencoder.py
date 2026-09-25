@@ -75,7 +75,7 @@ class AutoencoderKL(pl.LightningModule):
                 if context is not None:
                     print(f"{context}: Restored training weights")
 
-    def on_train_batch_end(self, *args, **kwargs):
+    def on_train_batch_end(self, outputs, batch, batch_idx):
         if self.use_ema:
             self.model_ema(self)
 

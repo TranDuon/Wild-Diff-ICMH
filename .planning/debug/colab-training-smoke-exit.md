@@ -2,7 +2,7 @@
 status: awaiting_human_verification
 trigger: "Colab notebook Step 7 smoke-test command invokes train.py and immediately exits status 1; the notebook shows only the parent CalledProcessError."
 created: 2026-09-25
-updated: 2026-09-25T19:30:00+07:00
+updated: 2026-09-25T20:05:00+07:00
 ---
 
 ## Symptoms
@@ -15,10 +15,10 @@ updated: 2026-09-25T19:30:00+07:00
 
 ## Current Focus
 
-hypothesis: "Confirmed: the selected CNscale1.0 author checkpoint has a full-width control module, while the Kgalagadi training config inherited control_model_ratio=0.2 from configs/model/diffeic.yaml."
-test: "Merge the Kgalagadi override into the model config, require ratio 1.0, and regression-test both the checkpoint-name contract and shared-tensor shape validation."
-expecting: "Step 7 reports 'Author checkpoint contract passed: control_model_ratio=1', loads the author checkpoint without zero-convolution size mismatches, then reaches Lightning trainer initialization."
-next_action: "Commit/push the fix, pull it in Colab via Step 2, then rerun only Step 7 and confirm that checkpoint loading passes."
+hypothesis: "Confirmed: Lightning 2.6 invokes on_train_batch_start with (batch, batch_idx), but the vendored LatentDiffusion hook still required Lightning-1-era dataloader_idx."
+test: "Remove dataloader_idx from the active hook, make adjacent train-batch-end hook contracts explicit, and regression-test both the exact signatures and a two-argument Lightning-2 call."
+expecting: "Step 7 proceeds past Epoch 0 batch 0 without TypeError and begins optimizer steps."
+next_action: "Commit/push the Lightning hook compatibility fix, pull it in Colab via Step 2, then rerun only Step 7 and confirm the 20-step smoke test advances."
 
 ## Evidence
 
@@ -47,6 +47,16 @@ next_action: "Commit/push the fix, pull it in Colab via Step 2, then rerun only 
   found: The Kgalagadi config now overrides `control_model_ratio: 1.0`; `train.py` rejects a checkpoint/config ratio mismatch before model construction and reports any residual shared tensor mismatches before `load_state_dict`; 28 focused tests pass.
   implication: The known control-module mismatch is fixed and future architecture drift fails early with an actionable message.
 
+- timestamp: 2026-09-25
+  checked: New Colab traceback after the architecture fix and every LightningModule/DataModule/Callback hook in the repository against Lightning 2.6 hook contracts.
+  found: Model construction, author-checkpoint loading, and Trainer initialization now pass. Training reaches Epoch 0 batch 0, where `LatentDiffusion.on_train_batch_start(self, batch, batch_idx, dataloader_idx)` raises because Lightning 2.6 correctly supplies only `(batch, batch_idx)`. DataModule and Callback signatures on the active path already match Lightning 2; two train-batch-end hooks used catch-all arguments instead of the explicit current contract.
+  implication: The remaining observed failure is an API migration defect, not a dataset, GPU, checkpoint, or model-shape problem.
+
+- timestamp: 2026-09-25
+  checked: Lightning hook compatibility patch, AST signature/behavior regressions, focused dependency/data tests, compileall, and whitespace validation.
+  found: `on_train_batch_start` now accepts the Lightning 2 call; train-batch-end hooks explicitly accept `(outputs, batch, batch_idx)`; 30 focused tests pass; compileall and `git diff --check` pass.
+  implication: The confirmed hook mismatch is fixed without weakening argument validation or changing model behavior.
+
 ## Eliminated
 
 - Missing RAM++ tags: Step 6 completed 971/971 and wrote `KGA_A01.jsonl` on Drive.
@@ -55,6 +65,6 @@ next_action: "Commit/push the fix, pull it in Colab via Step 2, then rerun only 
 ## Resolution
 
 - root_cause: Step 7 first hid its child traceback; once exposed, it showed that the CNscale1.0 author checkpoint was being loaded into a control module built with the base config's 0.2 width ratio, so all control/zero-convolution channel shapes differed.
-- fix: Preserve the streamed training diagnostics, override Kgalagadi training to `control_model_ratio: 1.0`, validate the CNscale value encoded in the checkpoint path before construction, and reject any residual shared tensor shape conflicts with a concise diagnostic rather than filtering weights.
-- verification: `python -m pytest tests/test_colab_dependency_contract.py tests/data/test_split_check.py -q` -> 28 passed; `python -m compileall -q train.py utils/checkpoint_contract.py utils/common.py` -> passed; `git diff --check` -> passed.
-- files_changed: [configs/train_kgalagadi_colab.yaml, train.py, utils/checkpoint_contract.py, tests/test_colab_dependency_contract.py]
+- fix: Preserve the streamed training diagnostics, match the checkpoint's full-width control model, validate checkpoint architecture, and migrate active train-batch hooks to Lightning 2 signatures.
+- verification: `python -m pytest tests/test_colab_dependency_contract.py tests/data/test_split_check.py -q` -> 30 passed; `python -m compileall -q ldm/models/diffusion/ddpm.py ldm/models/autoencoder.py model/diffeic.py model/callbacks.py dataset/data_module.py` -> passed; `git diff --check` -> passed.
+- files_changed: [configs/train_kgalagadi_colab.yaml, train.py, utils/checkpoint_contract.py, ldm/models/diffusion/ddpm.py, ldm/models/autoencoder.py, tests/test_colab_dependency_contract.py]
