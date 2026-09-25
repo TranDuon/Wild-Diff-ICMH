@@ -414,6 +414,7 @@ cells = [
             BPP_WEIGHT=str(BPP_WEIGHT),
             WILD_RUN_DIR=str(RUN_DIR),
             PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True',
+            PYTHONUNBUFFERED='1',
         )
         command = [
             sys.executable, '-u', 'train.py',
@@ -425,7 +426,33 @@ cells = [
             'lightning.trainer.limit_val_batches=2',
         ]
         print('Lệnh chạy:', ' '.join(command))
-        subprocess.run(command, cwd=REPO, env=env, check=True)
+        train_log_path = DRIVE_ROOT / 'logs' / f"train_smoke_{SITE.replace(':', '_')}.log"
+        train_log_path.parent.mkdir(parents=True, exist_ok=True)
+        print('Log chi tiết:', train_log_path)
+
+        with train_log_path.open('a', encoding='utf-8') as log_stream:
+            process = subprocess.Popen(
+                command,
+                cwd=REPO,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                print(line, end='')
+                log_stream.write(line)
+                log_stream.flush()
+            return_code = process.wait()
+
+        if return_code:
+            raise RuntimeError(
+                f'Smoke test training dừng với mã {return_code}. '
+                f'Traceback đầy đủ đã lưu tại {train_log_path}'
+            )
+        print('Smoke test 20 step hoàn tất.')
         """
     ),
     markdown(

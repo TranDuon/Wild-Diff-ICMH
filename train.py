@@ -154,12 +154,18 @@ def main() -> None:
     if args.overrides:
         config = OmegaConf.merge(config, OmegaConf.from_dotlist(args.overrides))
     OmegaConf.resolve(config)
+    print("[Train 1/6] Config resolved", flush=True)
     print(OmegaConf.to_yaml(config))
 
     pl.seed_everything(int(config.lightning.seed), workers=True)
+    print("[Train 2/6] Checking manifests, images and cached tags", flush=True)
     manifest_rows = _run_data_preflight(config)
     if manifest_rows:
         _run_asset_preflight(config, manifest_rows)
+
+    init_path = args.init_checkpoint or config.model.get("init_checkpoint") or config.model.get("resume")
+    if init_path and not Path(str(init_path)).is_file():
+        raise FileNotFoundError(f"init checkpoint not found: {init_path}")
 
     data_module = instantiate_from_config(config.data)
     model_overrides = [
@@ -173,6 +179,10 @@ def main() -> None:
     if model_overrides:
         model_config = OmegaConf.merge(model_config, OmegaConf.from_dotlist(model_overrides))
     OmegaConf.resolve(model_config)
+    sync_path = model_config.params.get("sync_path")
+    if sync_path and not Path(str(sync_path)).is_file():
+        raise FileNotFoundError(f"Stable Diffusion checkpoint not found: {sync_path}")
+    print("[Train 3/6] Building Diff-ICMH model (this can take several minutes)", flush=True)
     model = instantiate_from_config(model_config)
 
     save_dir = str(config.lightning.trainer.default_root_dir)
@@ -182,8 +192,9 @@ def main() -> None:
 
     resume_value = args.resume if args.resume is not None else config.model.get("resume_checkpoint")
     resume_path = _resolve_resume(resume_value, save_dir)
-    init_path = args.init_checkpoint or config.model.get("init_checkpoint") or config.model.get("resume")
+    print("[Train 4/6] Resolving author warm start / project resume", flush=True)
     if init_path and not resume_path:
+        print(f"Loading author checkpoint: {init_path}", flush=True)
         checkpoint = _torch_load(str(init_path))
         if args.resume_codec:
             state = checkpoint.get("state_dict", checkpoint)
@@ -196,8 +207,10 @@ def main() -> None:
     elif init_path and resume_path:
         print("Ignoring init_checkpoint because a full-state resume checkpoint was selected")
 
+    print("[Train 5/6] Initializing Lightning trainer", flush=True)
     callbacks = [instantiate_from_config(item) for item in config.lightning.callbacks]
     trainer = pl.Trainer(callbacks=callbacks, **config.lightning.trainer)
+    print("[Train 6/6] Starting trainer.fit", flush=True)
     trainer.fit(model, datamodule=data_module, ckpt_path=resume_path)
 
 

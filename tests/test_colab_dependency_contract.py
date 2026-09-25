@@ -21,6 +21,7 @@ RAM_SOURCE = ROOT / "src" / "recognize-anything"
 RAM_BERT = RAM_SOURCE / "ram" / "models" / "bert.py"
 RAM_PLUS = RAM_SOURCE / "ram" / "models" / "ram_plus.py"
 RAM_TAGGER = ROOT / "tools" / "precompute_ram_tags.py"
+TRAIN_ENTRYPOINT = ROOT / "train.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -121,6 +122,30 @@ class ColabDependencyContractTests(unittest.TestCase):
             self.assertNotIn("'--batch-size', '8'", source)
             self.assertIn("stderr=subprocess.STDOUT", source)
             self.assertIn("tag_log_path", source)
+
+    def test_generated_step_seven_streams_and_persists_child_traceback(self):
+        generator = GENERATOR.read_text(encoding="utf-8")
+        notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+        code = "\n".join(
+            cell["source"]
+            for cell in notebook["cells"]
+            if cell["cell_type"] == "code"
+        )
+
+        for source in (generator, code):
+            self.assertIn("train_log_path", source)
+            self.assertIn("PYTHONUNBUFFERED='1'", source)
+            self.assertIn("stderr=subprocess.STDOUT", source)
+            self.assertIn("stdout=subprocess.PIPE", source)
+            self.assertIn("Smoke test training dừng với mã", source)
+
+    def test_training_entrypoint_reports_startup_phases_and_checks_checkpoints(self):
+        source = TRAIN_ENTRYPOINT.read_text(encoding="utf-8")
+
+        for phase in range(1, 7):
+            self.assertIn(f"[Train {phase}/6]", source)
+        self.assertIn("init checkpoint not found", source)
+        self.assertIn("Stable Diffusion checkpoint not found", source)
 
     def test_ram_bert_uses_current_transformers_helper_modules(self):
         tree = ast.parse(RAM_BERT.read_text(encoding="utf-8"))
