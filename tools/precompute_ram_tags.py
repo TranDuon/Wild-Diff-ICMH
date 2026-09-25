@@ -8,15 +8,39 @@ import sys
 import traceback
 from pathlib import Path
 
+# When this file is launched directly (``python tools/precompute_ram_tags.py``),
+# Python puts ``tools/`` rather than the repository root on ``sys.path``.  The
+# notebook deliberately invokes it that way, so make the project's top-level
+# packages (notably ``model``) discoverable independently of the caller's cwd.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
+def _build_parser():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--manifest", default="data/manifests/kgalagadi_site_split.jsonl")
+    parser.add_argument("--data-root", required=True)
+    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--site-id", default=None)
+    parser.add_argument("--device", default="cuda", choices=("cuda", "cpu"))
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--num-workers", type=int, default=4)
+    return parser
+
+
+# Show CLI help without importing the multi-gigabyte ML stack.  This also gives
+# the direct-script regression a dependency-independent bootstrap path.
+if __name__ == "__main__" and any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
+    _build_parser().parse_args()
+
 import numpy as np
 import torch
 from PIL import Image
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
-
-from model.lfgcm import TagGCM
-
 
 def _rows(path, site_id):
     with open(path, "r", encoding="utf-8") as stream:
@@ -100,15 +124,7 @@ def _validate_inputs(rows, data_root, checkpoint):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", default="data/manifests/kgalagadi_site_split.jsonl")
-    parser.add_argument("--data-root", required=True)
-    parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--site-id", default=None)
-    parser.add_argument("--device", default="cuda", choices=("cuda", "cpu"))
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser = _build_parser()
     args = parser.parse_args(argv)
 
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -140,6 +156,11 @@ def main(argv=None):
         f"[RAM tags 2/4] Loading checkpoint: {args.checkpoint}",
         flush=True,
     )
+    # Keep the heavyweight project import after argparse and input validation.
+    # This makes ``--help`` useful even in a partially installed environment,
+    # while REPO_ROOT above makes the import reliable for direct script runs.
+    from model.lfgcm import TagGCM
+
     model = TagGCM(enabled=True, pretrained=args.checkpoint).to(args.device).eval()
     print(f"[RAM tags 3/4] Model ready on {args.device}", flush=True)
     loader = DataLoader(

@@ -2,7 +2,7 @@
 status: awaiting_human_verification
 trigger: "Colab notebook Step 6 starts RAM++ tag generation for KGA:A01, reports 0/971 existing rows, then tools/precompute_ram_tags.py exits with status 1 and the notebook shows only CalledProcessError."
 created: 2026-09-25
-updated: 2026-09-25T18:02:00+07:00
+updated: 2026-09-25T18:18:00+07:00
 ---
 
 ## Symptoms
@@ -15,10 +15,10 @@ updated: 2026-09-25T18:02:00+07:00
 
 ## Current Focus
 
-hypothesis: "Step 6 is the first code path that constructs RAM++; the vendored inference constructor unnecessarily downloads bert-base-uncased, and the notebook also hard-codes an L4-oriented batch of 8 on the user's 14.6 GiB T4. Either failure occurs at 0/971 while the old wrapper discards the useful child context."
-test: "Remove tokenizer initialization from RAM++ inference, select batch size from VRAM, add preflight/stage diagnostics, stream combined child output to the notebook and a persistent Drive log, and run focused regressions."
-expecting: "On the user's T4, Step 6 reports batch=1, advances through four named startup stages, then starts the progress bar; any remaining failure includes a full traceback and persistent log path."
-next_action: "User pulls the fix and reruns Step 3 (to reinstall patched RAM) and Step 6 on Colab; inspect the persistent log only if it does not advance."
+hypothesis: "The streamed traceback proves the current failure is import-path bootstrap: direct execution of tools/precompute_ram_tags.py makes tools/ sys.path[0], so the repository-root model package is not discoverable even with cwd=REPO."
+test: "Insert the repository root derived from __file__ before any project import, defer TagGCM until after parsing and preflight, and launch the script with --help from an unrelated working directory in a real subprocess."
+expecting: "The subprocess bootstrap test exits 0 outside the repository; on Colab, Step 6 reaches the named preflight/checkpoint/model stages instead of failing with No module named 'model'."
+next_action: "Root agent commits and pushes the two-file fix; user pulls it and reruns Step 6. Inspect the streamed traceback/log only if a new failure appears."
 
 ## Evidence
 
@@ -47,6 +47,16 @@ next_action: "User pulls the fix and reruns Step 3 (to reinstall patched RAM) an
   found: `23 passed`; modified Python files compile, every generated notebook code cell parses, and `git diff --check` reports no whitespace errors.
   implication: The fix is internally consistent and ready for the Colab acceptance run.
 
+- timestamp: 2026-09-25
+  checked: User's second Step 6 acceptance run with streamed child output.
+  found: `tools/precompute_ram_tags.py` exits at line 18 on `from model.lfgcm import TagGCM` with `ModuleNotFoundError: No module named 'model'` before preflight or model allocation.
+  implication: The persistent logging worked and isolated a deterministic Python script bootstrap issue, not CUDA memory, checkpoint content, or image data.
+
+- timestamp: 2026-09-25
+  checked: Direct-script import semantics and regression launched from a temporary directory.
+  found: The script now derives `REPO_ROOT` from `__file__`, prepends it to `sys.path`, defers the heavyweight project import, and `python <absolute-script-path> --help` exits 0 from outside the repository. The focused suite reports `24 passed`; Python compilation and `git diff --check` pass.
+  implication: The exact invocation mode used by Colab is covered and the `model` package no longer depends on the caller's working-directory import behavior.
+
 ## Eliminated
 
 - Notebook Step 3 environment initialization: it completed with `THÀNH CÔNG: môi trường và TagGCM đã sẵn sàng.`
@@ -56,9 +66,9 @@ next_action: "User pulls the fix and reruns Step 3 (to reinstall patched RAM) an
 
 ## Resolution
 
-- root_cause: Step 6 enters RAM++ inference initialization that Step 3 did not exercise; that path unnecessarily fetched a BERT tokenizer, while the notebook simultaneously used an unsafe fixed batch of 8 on a 14.6 GiB T4 and exposed only a generic parent `CalledProcessError`.
-- fix: Skip tokenizer creation for RAM++ inference, choose batch 1 on sub-20-GiB GPUs (2 otherwise), validate checkpoint/image inputs before allocating the model, print four startup phases, and stream merged child output into both Colab and a persistent Drive log.
-- verification: Automated regression suite passes (23 tests); Python and generated notebook syntax pass. Hardware acceptance remains: Step 6 must advance beyond 0/971 on the user's T4.
+- root_cause: After the earlier diagnostic hardening exposed the child traceback, direct execution of `tools/precompute_ram_tags.py` was shown to put `tools/` rather than the repository root on `sys.path`, making the top-level `model` package undiscoverable before RAM++ initialization.
+- fix: Bootstrap the repository root from the script's own `__file__`, prepend it to `sys.path`, and defer `TagGCM` import until after argparse and input preflight; retain the earlier tokenizer, VRAM-safe batch, progress, and persistent-log protections.
+- verification: A real subprocess launched from an unrelated temporary directory reaches `--help` successfully; the focused suite passes (24 tests), modified Python files compile, and `git diff --check` passes. Hardware acceptance remains: Step 6 must reach preflight/model loading and advance beyond 0/971 on Colab.
 - files_changed:
   - src/recognize-anything/ram/models/ram_plus.py
   - tools/precompute_ram_tags.py

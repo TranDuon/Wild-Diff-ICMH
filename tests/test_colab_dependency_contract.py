@@ -82,6 +82,31 @@ class ColabDependencyContractTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, r"(?s)Missing 1/1.*missing\.jpg"):
                 namespace["_validate_inputs"](rows, root / "images", checkpoint)
 
+    def test_ram_tagger_direct_script_bootstraps_repo_root(self):
+        source = RAM_TAGGER.read_text(encoding="utf-8")
+        root_setup = "REPO_ROOT = Path(__file__).resolve().parents[1]"
+        path_setup = "sys.path.insert(0, str(REPO_ROOT))"
+        project_import = "from model.lfgcm import TagGCM"
+
+        self.assertIn(root_setup, source)
+        self.assertIn(path_setup, source)
+        self.assertIn(project_import, source)
+        self.assertLess(source.index(root_setup), source.index(project_import))
+        self.assertLess(source.index(path_setup), source.index(project_import))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run(
+                [sys.executable, str(RAM_TAGGER), "--help"],
+                cwd=temporary,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Cache RAM++ tags once", result.stdout)
+        self.assertNotIn("No module named 'model'", result.stderr)
+
     def test_generated_step_six_is_t4_safe_and_preserves_child_traceback(self):
         generator = GENERATOR.read_text(encoding="utf-8")
         notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
