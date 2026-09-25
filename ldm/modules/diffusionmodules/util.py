@@ -117,7 +117,14 @@ def checkpoint(func, inputs, params, flag):
     :param flag: if False, disable gradient checkpointing.
     """
     if flag:
-        args = tuple(inputs) + tuple(params)
+        # Frozen parameters must not be listed as differentiated inputs to
+        # torch.autograd.grad.  Older training code merely omitted them from
+        # the optimizer, but DiffEIC now freezes the SD backbone explicitly;
+        # PyTorch 2.11 rejects requires_grad=False inputs even when
+        # allow_unused=True.  They remain available through run_function's
+        # module closure, while gradients still flow through input tensors.
+        trainable_params = tuple(param for param in params if param.requires_grad)
+        args = tuple(inputs) + trainable_params
         return CheckpointFunction.apply(func, len(inputs), *args)
     else:
         return func(*inputs)

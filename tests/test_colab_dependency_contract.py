@@ -28,6 +28,7 @@ TRAIN_CONFIG = ROOT / "configs" / "train_kgalagadi_colab.yaml"
 DDPM_SOURCE = ROOT / "ldm" / "models" / "diffusion" / "ddpm.py"
 AUTOENCODER_SOURCE = ROOT / "ldm" / "models" / "autoencoder.py"
 ENCODERS_SOURCE = ROOT / "ldm" / "modules" / "encoders" / "modules.py"
+DIFFUSION_UTIL_SOURCE = ROOT / "ldm" / "modules" / "diffusionmodules" / "util.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -68,6 +69,49 @@ class ColabDependencyContractTests(unittest.TestCase):
             node for node in class_node.body
             if isinstance(node, ast.FunctionDef) and node.name == method_name
         )
+
+    @staticmethod
+    def _module_function(path: Path, function_name: str) -> ast.FunctionDef:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        return next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+
+    def test_gradient_checkpoint_excludes_frozen_parameters_from_autograd(self):
+        checkpoint_node = self._module_function(DIFFUSION_UTIL_SOURCE, "checkpoint")
+        checkpoint_module = ast.Module(body=[checkpoint_node], type_ignores=[])
+        ast.fix_missing_locations(checkpoint_module)
+
+        captured = []
+
+        class FakeCheckpointFunction:
+            @staticmethod
+            def apply(*args):
+                captured.extend(args)
+                return args
+
+        namespace = {"CheckpointFunction": FakeCheckpointFunction}
+        exec(compile(checkpoint_module, str(DIFFUSION_UTIL_SOURCE), "exec"), namespace)
+
+        class FakeParameter:
+            def __init__(self, requires_grad):
+                self.requires_grad = requires_grad
+
+        input_tensor = object()
+        frozen_parameter = FakeParameter(False)
+        trainable_parameter = FakeParameter(True)
+
+        namespace["checkpoint"](
+            lambda value: value,
+            (input_tensor,),
+            (frozen_parameter, trainable_parameter),
+            True,
+        )
+
+        self.assertIn(input_tensor, captured)
+        self.assertIn(trainable_parameter, captured)
+        self.assertNotIn(frozen_parameter, captured)
 
     def test_active_training_hooks_match_lightning_2_signatures(self):
         train_start = self._class_method(

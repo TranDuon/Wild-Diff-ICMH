@@ -2,7 +2,7 @@
 status: awaiting_human_verification
 trigger: "Colab notebook Step 7 smoke-test command invokes train.py and immediately exits status 1; the notebook shows only the parent CalledProcessError."
 created: 2026-09-25
-updated: 2026-09-25T22:55:00+07:00
+updated: 2026-09-25T23:30:00+07:00
 ---
 
 ## Symptoms
@@ -17,20 +17,20 @@ updated: 2026-09-25T22:55:00+07:00
 
 bug_class: bohrbug
 reasoning_checkpoint:
-  hypothesis: "FrozenOpenCLIPEmbedder unconditionally converts NLD token embeddings to legacy LND layout, while the OpenCLIP version selected by the supported >=2.22,<4 range declares transformer.batch_first=True; a batch of one is therefore interpreted as sequence length 1 and cannot use the canonical 77x77 causal mask."
+  hypothesis: "The custom gradient-checkpoint wrapper passes every module parameter to CheckpointFunction, including the explicitly frozen SD backbone parameters. PyTorch 2.11 rejects requires_grad=False tensors in torch.autograd.grad even with allow_unused=True."
   confirming_evidence:
-    - "The Colab traceback reports attn_mask (77,77) but expected (1,1), exactly matching a batch-first attention block receiving LND (77,1,D) for batch size 1."
-    - "The focused regression reproduces the defect: the current method sends (77,1,4) to a transformer declaring batch_first=True and fails, while the input embedding is (1,77,4)."
-    - "The dataset and conditioning chain preserve text as list[str] and tokenize to N x 77, ruling out a one-token RAM tag payload."
-  falsification_test: "If a batch-first transformer stub receives NLD and a legacy transformer stub receives LND after the fix, both must return the same public NLD shape; failure of either case would falsify the compatibility fix."
-  fix_rationale: "Conditionally permuting only for transformers that do not declare batch_first preserves the layout contract of both OpenCLIP API generations and leaves the standard 77x77 causal mask untouched."
-  blind_spots: "The exact Colab OpenCLIP wheel is unavailable locally, so verification uses its public transformer.batch_first contract and a faithful layout stub; final GPU execution remains a human verification step."
+    - "The new Colab run completes forward and fails specifically at CheckpointFunction.backward line 149 inside torch.autograd.grad with `One of the differentiated Tensors does not require grad`."
+    - "Every checkpoint input tensor is detached and re-enabled for grad at line 141, so the only non-grad differentiated inputs can be ctx.input_params."
+    - "DiffEIC intentionally sets the frozen SD backbone parameters to requires_grad=False, while ResBlock/AttentionBlock/BasicTransformerBlock pass self.parameters() unfiltered into the wrapper."
+  falsification_test: "A focused wrapper test must prove that a frozen parameter is absent from CheckpointFunction.apply while a trainable parameter and the checkpoint input remain present."
+  fix_rationale: "Filter only explicit checkpoint parameter inputs by requires_grad; frozen weights remain visible to run_function through its module closure, while checkpoint inputs remain differentiable so gradient flow through the frozen backbone is preserved."
+  blind_spots: "PyTorch is not installed in the local Windows test environment, so the focused regression exercises the wrapper contract without CUDA; the final full backward pass requires Colab verification."
   candidate_causes:
-    - "code: vendored Stable-Diffusion-era encoder hard-codes LND around manually invoked OpenCLIP blocks."
-    - "environment: the broad open_clip_torch>=2.22,<4 constraint resolves to a newer batch-first transformer implementation on Colab."
-    - "data: malformed txt batching was considered, but the dataset returns strings and default collation produces list[str], which tokenizes to N x 77."
-  and_gate: "yes — the failure requires both the hard-coded legacy permutation and a batch-first OpenCLIP implementation; either the old sequence-first dependency or a layout-aware encoder would not fail."
-next_action: "Commit/push the OpenCLIP layout compatibility fix, pull it in Colab via Step 2, then rerun only Step 7 and confirm the smoke test advances beyond the first text-conditioning pass."
+    - "code: the vendored Stable-Diffusion checkpoint helper assumes every module parameter requires gradients."
+    - "architecture: DiffEIC now correctly freezes the SD backbone rather than merely excluding it from the optimizer."
+    - "environment: PyTorch 2.11 validates differentiated inputs and rejects requires_grad=False tensors even with allow_unused=True."
+  and_gate: "yes — the failure requires both explicit backbone freezing and the legacy unfiltered custom checkpoint parameter list; removing either condition avoids this exact exception."
+next_action: "Review and commit/push the frozen-parameter checkpoint fix, pull it in Colab via Step 2, then rerun only Step 7 and confirm backward completes and the 20-step smoke test advances."
 
 ## Evidence
 
@@ -84,6 +84,16 @@ next_action: "Commit/push the OpenCLIP layout compatibility fix, pull it in Cola
   found: The encoder now preserves NLD for batch-first OpenCLIP and only converts to LND for legacy transformers; the public output stays NLD and the 77x77 mask is unchanged. The focused test passes, 31 adjacent tests pass, compileall and `git diff --check` pass. Temporarily reverting only the production hunk makes the focused test fail with `(77,1,4)` versus `(1,77,4)`; reapplying makes it pass.
   implication: The minimal layout branch fixes the reproduced cause and retains compatibility with both supported OpenCLIP generations.
 
+- timestamp: 2026-09-25
+  checked: New Colab traceback after the OpenCLIP layout fix and the custom CheckpointFunction contract in `ldm/modules/diffusionmodules/util.py`.
+  found: The first forward pass now succeeds and backward reaches `CheckpointFunction.backward`, where `torch.autograd.grad` receives all module parameters. DiffEIC explicitly freezes the SD backbone with `requires_grad=False`, and PyTorch 2.11 raises `One of the differentiated Tensors does not require grad` even when `allow_unused=True`.
+  implication: Frozen parameters must remain captured by the module closure but must not be explicit differentiated inputs to the custom autograd function.
+
+- timestamp: 2026-09-25
+  checked: Focused checkpoint contract regression before and after filtering parameters, adjacent Colab/data tests, compileall, and whitespace validation.
+  found: The regression failed before the production change because the frozen fake parameter reached `CheckpointFunction.apply`; after filtering on `requires_grad`, the focused test passes, 32 adjacent tests pass, compileall succeeds, and `git diff --check` reports no errors.
+  implication: The fix preserves gradients through checkpoint input tensors and trainable parameters while excluding only invalid frozen autograd inputs.
+
 ## Eliminated
 
 - Missing RAM++ tags: Step 6 completed 971/971 and wrote `KGA_A01.jsonl` on Drive.
@@ -91,13 +101,13 @@ next_action: "Commit/push the OpenCLIP layout compatibility fix, pull it in Cola
 
 ## Resolution
 
-- root_cause: The latest first-batch failure required two conditions: the vendored FrozenOpenCLIPEmbedder hard-coded the legacy LND residual-block layout, while Colab resolved the supported OpenCLIP range to a batch-first transformer. With batch size one, attention interpreted the tensor as sequence length one and rejected the unchanged 77x77 causal mask.
-- fix: Preserve the streamed training diagnostics and prior checkpoint/Lightning migrations, then make FrozenOpenCLIPEmbedder inspect the transformer's batch-first contract and permute only for legacy sequence-first implementations. Keep the standard 77x77 attention mask intact.
+- root_cause: After the prior startup and OpenCLIP fixes allowed the first forward pass to complete, backward failed because the legacy custom checkpoint wrapper registered frozen SD parameters as differentiated inputs; PyTorch 2.11 rejects those requires_grad=False tensors regardless of allow_unused=True.
+- fix: Keep frozen parameters available through each module's run-function closure, but pass only requires_grad=True parameters into CheckpointFunction and torch.autograd.grad; continue differentiating checkpoint input tensors so gradients flow into trainable upstream/control modules.
 - verification:
     target_test: {result: pass, command: "python -m pytest tests/test_colab_dependency_contract.py::ColabDependencyContractTests::test_openclip_text_encoder_honors_transformer_tensor_layout -q"}
     mutation_check: {result: skipped, reason_if_skipped: "Stryker is not applicable to this Python repository; revert-and-reconfirm exercises the exact layout branch instead."}
     no_op_deletion: {result: pass, deletion_justified_by_rca: false}
-    adjacent_tests: {result: pass, suites_run: ["tests/test_colab_dependency_contract.py", "tests/data/test_split_check.py"], outcome: "31 passed"}
+    adjacent_tests: {result: pass, suites_run: ["tests/test_colab_dependency_contract.py", "tests/data/test_split_check.py"], outcome: "32 passed"}
     revert_and_reconfirm: {result: pass, bug_returned_on_revert: true, fixed_on_reapply: true}
     compile: {result: pass, command: "python -m compileall -q ldm/modules/encoders/modules.py tests/test_colab_dependency_contract.py"}
     whitespace: {result: pass, command: "git diff --check"}
