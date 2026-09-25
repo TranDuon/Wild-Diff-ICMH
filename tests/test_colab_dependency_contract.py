@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import importlib.util
 import re
@@ -17,6 +18,7 @@ REQUIREMENTS = ROOT / "requirements-colab.txt"
 GENERATOR = ROOT / "tools" / "build_colab_training_notebook.py"
 NOTEBOOK = ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb"
 RAM_SOURCE = ROOT / "src" / "recognize-anything"
+RAM_BERT = RAM_SOURCE / "ram" / "models" / "bert.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -46,6 +48,33 @@ def requirement_names() -> set[str]:
 
 
 class ColabDependencyContractTests(unittest.TestCase):
+    def test_ram_bert_uses_current_transformers_helper_modules(self):
+        tree = ast.parse(RAM_BERT.read_text(encoding="utf-8"))
+        imports = {
+            node.module: {alias.name for alias in node.names}
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module in {
+                "transformers.modeling_utils",
+                "transformers.pytorch_utils",
+            }
+        }
+
+        self.assertEqual(imports["transformers.modeling_utils"], {"PreTrainedModel"})
+        self.assertEqual(
+            imports["transformers.pytorch_utils"],
+            {
+                "apply_chunking_to_forward",
+                "find_pruneable_heads_and_indices",
+                "prune_linear_layer",
+            },
+        )
+
+    def test_colab_keeps_transformers_on_supported_major(self):
+        requirements = REQUIREMENTS.read_text(encoding="utf-8")
+        self.assertRegex(requirements, r"(?m)^transformers>=4\.41,<5$")
+        self.assertNotRegex(requirements, r"(?m)^transformers[^\n]*<6$")
+
     def test_compressai_no_deps_has_complete_explicit_runtime_closure(self):
         missing = COMPRESSAI_NON_BASE_REQUIREMENTS - requirement_names()
         self.assertFalse(missing, f"Missing explicit CompressAI dependencies: {sorted(missing)}")
@@ -101,6 +130,14 @@ class ColabDependencyContractTests(unittest.TestCase):
                 spec = importlib.util.find_spec("ram")
                 self.assertIsNotNone(spec)
                 self.assertTrue((target / "ram" / "__init__.py").is_file())
+                installed_bert = (target / "ram" / "models" / "bert.py").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("from transformers.pytorch_utils import (", installed_bert)
+                self.assertNotIn(
+                    "from transformers.modeling_utils import (\n    PreTrainedModel,\n    apply_chunking_to_forward,",
+                    installed_bert,
+                )
             finally:
                 sys.path.remove(str(target))
                 importlib.invalidate_caches()

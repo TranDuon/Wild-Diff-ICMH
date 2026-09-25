@@ -24,7 +24,8 @@ timm>=0.9.7,<2
 tomli>=2.2.1,<3
 torch-geometric>=2.6,<3
 tqdm>=4.66,<5
-transformers>=4.41,<6
+# RAM++ is based on Transformers 4.x; v5 removes APIs used by its vendored BERT.
+transformers>=4.41,<5
 typing-extensions>=4
 ultralytics_thop==2.0.0
 wheel>=0.32
