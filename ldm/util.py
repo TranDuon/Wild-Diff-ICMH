@@ -1,4 +1,6 @@
 import importlib
+from functools import lru_cache
+from pathlib import Path
 
 import torch
 from torch import optim
@@ -6,6 +8,37 @@ import numpy as np
 
 from inspect import isfunction
 from PIL import Image, ImageDraw, ImageFont
+
+
+def _text_font_candidates():
+    """Return portable font locations in preference order."""
+    repo_root = Path(__file__).resolve().parents[1]
+    pillow_root = Path(ImageFont.__file__).resolve().parent
+    return (
+        repo_root / "font" / "DejaVuSans.ttf",
+        pillow_root / "fonts" / "DejaVuSans.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/dejavu/DejaVuSans.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),
+    )
+
+
+@lru_cache(maxsize=16)
+def _load_text_font(size):
+    """Load a readable validation font without depending on the current cwd."""
+    size = max(1, int(size))
+    for font_path in _text_font_candidates():
+        try:
+            return ImageFont.truetype(str(font_path), size=size)
+        except (OSError, ValueError):
+            continue
+
+    # Pillow/fontconfig can sometimes resolve this name even when the common
+    # absolute locations above do not exist.
+    try:
+        return ImageFont.truetype("DejaVuSans.ttf", size=size)
+    except (OSError, ValueError):
+        return ImageFont.load_default()
 
 
 def autocast(f):
@@ -26,8 +59,7 @@ def log_txt_as_img(wh, xc, size=10):
     for bi in range(b):
         txt = Image.new("RGB", wh, color="white")
         draw = ImageDraw.Draw(txt)
-        font = ImageFont.truetype('font/DejaVuSans.ttf', size=size)
-        font = ImageFont.load_default()
+        font = _load_text_font(size)
         nc = int(40 * (wh[0] / 256))
         lines = "\n".join(xc[bi][start:start + nc] for start in range(0, len(xc[bi]), nc))
 

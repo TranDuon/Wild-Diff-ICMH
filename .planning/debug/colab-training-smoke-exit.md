@@ -2,7 +2,7 @@
 status: awaiting_human_verification
 trigger: "Colab notebook Step 7 smoke-test command invokes train.py and immediately exits status 1; the notebook shows only the parent CalledProcessError."
 created: 2026-09-25
-updated: 2026-09-26T00:02:00+07:00
+updated: 2026-09-26T10:42:24+07:00
 ---
 
 ## Symptoms
@@ -17,19 +17,19 @@ updated: 2026-09-26T00:02:00+07:00
 
 bug_class: bohrbug
 reasoning_checkpoint:
-  hypothesis: "Every SFT block unconditionally applies adaptive_avg_pool2d to its reference tensor, even though the codec architecture constructs ref and x with identical spatial dimensions. Its CUDA backward has no deterministic implementation, so Lightning deterministic=true rejects the first backward pass."
+  hypothesis: "Validation text-image logging resolves DejaVuSans.ttf relative to the process cwd instead of the repository, and aborts before its immediately following default-font assignment can run."
   confirming_evidence:
-    - "The new Colab run completes forward and reaches backward, which fails specifically with `adaptive_avg_pool2d_backward_cuda does not have a deterministic implementation` while trainer deterministic=true is active."
-    - "Repository search finds exactly one training-path adaptive_avg_pool2d call: SFT.forward in model/layers/res_blk.py."
-    - "All SFT call sites construct ref and x at matching scales for the 256x256 training crop: encoder 1/8 and 1/16, hyper-encoder 1/16, 1/32 and 1/64, and decoder 1/16 and 1/8. The unconditional pool is therefore a no-op in the supported training path."
-  falsification_test: "A focused SFT test must prove that equal spatial shapes bypass adaptive_avg_pool2d while mismatched shapes retain the authors' original resize behavior."
-  fix_rationale: "Skip only the mathematically redundant adaptive pool when ref already has the target shape. This preserves exact values and gradients, keeps deterministic training enabled, and retains the original fallback for unexpected shape mismatches."
-  blind_spots: "The local environment cannot execute the CUDA backward; final confirmation still requires the Colab L4 smoke test. A future unsupported crop producing mismatched SFT shapes would still use adaptive pooling and could require a separate deterministic resize policy."
+    - "The new run advances through ten training batches with losses, proving all prior startup/forward/backward failures are cleared."
+    - "The crash begins only when validation_step calls DiffEIC.log_images -> log_txt_as_img."
+    - "ldm/util.py calls ImageFont.truetype('font/DejaVuSans.ttf') using a cwd-relative path, then immediately overwrites the result with ImageFont.load_default; on Colab /content/Wild-Diff-ICMH has no font directory, so the first call raises OSError."
+  falsification_test: "Force every TrueType candidate to raise OSError and verify log_txt_as_img still renders a validation caption with the Pillow default font."
+  fix_rationale: "Resolve fonts from stable repo/Pillow/system locations, cache the selected font by size, and fall back to Pillow's built-in font so optional visualization can never terminate validation."
+  blind_spots: "Local tests cover the exact missing-font path and output tensor dimensions, but the final 20-step validation/training completion still requires the Colab L4 run."
   candidate_causes:
-    - "code: SFT performs an unconditional adaptive pool even when source and target dimensions are identical."
-    - "config/environment: Lightning deterministic=true enables PyTorch's hard error for CUDA operations without deterministic backward implementations."
-  and_gate: "yes — the crash requires both the redundant adaptive pooling node in the graph and strict deterministic CUDA execution; preserving reproducibility means removing the redundant node rather than weakening the trainer setting."
-next_action: "Review and commit/push the SFT equal-shape guard, pull it in Colab via Step 2, then rerun only Step 7 and confirm backward advances beyond batch 0 through the 20-step smoke test."
+    - "code: validation logging assumes a font path relative to the current working directory."
+    - "environment: the Colab checkout does not contain font/DejaVuSans.ttf at that relative location."
+  and_gate: "yes — the cwd-relative resource lookup and absent checkout font jointly trigger the OSError; validation itself and model metrics are already running."
+next_action: "Root agent should review and commit/push the portable font loader, then pull through Step 2 and rerun only Step 7 to confirm validation and all 20 optimizer steps complete."
 
 ## Evidence
 
@@ -103,6 +103,16 @@ next_action: "Review and commit/push the SFT equal-shape guard, pull it in Colab
   found: Before the fix the regression recorded an adaptive-pool call for matching 32x32 tensors and failed. After the fix, matching shapes bypass the call while a 64x64 reference still follows the original adaptive resize path; 69 tests pass, 2 skip, compileall succeeds, and git diff --check reports no whitespace errors.
   implication: The supported training path no longer records the nondeterministic CUDA backward node, and unexpected mismatched inputs retain the authors' prior behavior.
 
+- timestamp: 2026-09-26
+  checked: Full new Colab traceback, validation image logging, repository font assets, and font resolution behavior from arbitrary working directories.
+  found: Training reaches batch 10 with metrics and enters validation; only log_txt_as_img fails because it opens font/DejaVuSans.ttf relative to cwd before an otherwise intended default-font fallback. The repository contains no packaged TTF.
+  implication: The model/training path is healthy through backward and optimizer work; an optional visualization resource lookup is the sole observed blocker.
+
+- timestamp: 2026-09-26
+  checked: Test-first missing-font regression, portable font resolver, full pytest suite, compileall, and whitespace validation.
+  found: The regression failed before implementation because no resilient font loader existed. After the fix, all unavailable TrueType candidates fall back to Pillow's default and produce a 1x3x64x128 validation image; 70 tests pass, 2 skip, compileall succeeds, and git diff --check reports no errors.
+  implication: Validation caption rendering no longer depends on process cwd or an optional TTF file and cannot abort the smoke test for this missing resource.
+
 ## Eliminated
 
 - Missing RAM++ tags: Step 6 completed 971/971 and wrote `KGA_A01.jsonl` on Drive.
@@ -110,15 +120,15 @@ next_action: "Review and commit/push the SFT equal-shape guard, pull it in Colab
 
 ## Resolution
 
-- root_cause: After the prior fixes allowed backward to advance, SFT.forward unconditionally inserted adaptive_avg_pool2d even when ref and x already had identical spatial dimensions. Lightning deterministic=true enables strict PyTorch deterministic algorithms, and CUDA adaptive_avg_pool2d backward has no deterministic implementation, so the redundant node aborted batch 0.
-- fix: Preserve strict deterministic training and exact model math by bypassing adaptive_avg_pool2d when ref already matches x spatially; retain the original adaptive resize behavior only for unexpected mismatched shapes.
+- root_cause: After training advanced through batch 10, validation image logging attempted to open `font/DejaVuSans.ttf` relative to Colab's working directory; the optional resource is absent, and the resulting OSError occurred before the old code's default-font assignment.
+- fix: Resolve validation fonts from repository-relative, Pillow, and common system locations, cache them by size, and fall back to Pillow's built-in font when no TrueType resource is available.
 - verification:
-    target_test: {result: pass, command: "python -m pytest tests/test_colab_dependency_contract.py::ColabDependencyContractTests::test_sft_skips_redundant_adaptive_pool_for_matching_shapes -q", pre_fix_result: "failed because adaptive pooling was called for equal 32x32 shapes"}
+    target_test: {result: pass, command: "python -m pytest tests/test_colab_dependency_contract.py::ColabDependencyContractTests::test_validation_text_logger_falls_back_when_truetype_fonts_are_missing -q", pre_fix_result: "failed because resilient font-loading functions were absent"}
     mutation_check: {result: skipped, reason_if_skipped: "Python repository has no configured mutation runner; test-first red/green execution exercised the exact guard."}
     no_op_deletion: {result: pass, deletion_justified_by_rca: false}
-    adjacent_tests: {result: pass, suites_run: ["full pytest suite"], outcome: "69 passed, 2 skipped"}
-    revert_and_reconfirm: {result: pass, bug_returned_on_revert: true, fixed_on_reapply: true, evidence: "target regression failed before the production change and passed afterward"}
-    compile: {result: pass, command: "python -m compileall -q model/layers/res_blk.py tests/test_colab_dependency_contract.py"}
+    adjacent_tests: {result: pass, suites_run: ["full pytest suite"], outcome: "70 passed, 2 skipped"}
+    revert_and_reconfirm: {result: pass, bug_returned_on_revert: true, fixed_on_reapply: true, evidence: "target regression was red before the loader existed and green after the production change"}
+    compile: {result: pass, command: "python -m compileall -q ldm/util.py tests/test_colab_dependency_contract.py"}
     whitespace: {result: pass, command: "git diff --check"}
     guardrail_verdict: accepted
-- files_changed: [model/layers/res_blk.py, tests/test_colab_dependency_contract.py]
+- files_changed: [ldm/util.py, tests/test_colab_dependency_contract.py]

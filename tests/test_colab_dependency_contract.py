@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import lru_cache
 from pathlib import Path
 
 from utils.checkpoint_contract import state_dict_shape_mismatches
@@ -30,6 +31,7 @@ AUTOENCODER_SOURCE = ROOT / "ldm" / "models" / "autoencoder.py"
 ENCODERS_SOURCE = ROOT / "ldm" / "modules" / "encoders" / "modules.py"
 DIFFUSION_UTIL_SOURCE = ROOT / "ldm" / "modules" / "diffusionmodules" / "util.py"
 RES_BLOCK_SOURCE = ROOT / "model" / "layers" / "res_blk.py"
+LDM_UTIL_SOURCE = ROOT / "ldm" / "util.py"
 
 COMPRESSAI_NON_BASE_REQUIREMENTS = {
     "einops",
@@ -171,6 +173,70 @@ class ColabDependencyContractTests(unittest.TestCase):
             FakeFunctional.calls,
             [((2, 64, 64, 64), (32, 32))],
         )
+
+    def test_validation_text_logger_falls_back_when_truetype_fonts_are_missing(self):
+        import numpy as np
+        from PIL import Image, ImageDraw, ImageFont
+
+        source_tree = ast.parse(LDM_UTIL_SOURCE.read_text(encoding="utf-8"))
+        required_names = {
+            "_text_font_candidates",
+            "_load_text_font",
+            "log_txt_as_img",
+        }
+        functions = [
+            node
+            for node in source_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in required_names
+        ]
+        self.assertEqual({node.name for node in functions}, required_names)
+
+        default_font = ImageFont.load_default()
+
+        class MissingImageFont:
+            truetype_attempts = []
+            default_calls = 0
+
+            @classmethod
+            def truetype(cls, path, size):
+                cls.truetype_attempts.append((str(path), size))
+                raise OSError("cannot open resource")
+
+            @classmethod
+            def load_default(cls):
+                cls.default_calls += 1
+                return default_font
+
+        class FakeTorch:
+            @staticmethod
+            def tensor(value):
+                return np.asarray(value)
+
+        module = ast.Module(body=functions, type_ignores=[])
+        ast.fix_missing_locations(module)
+        namespace = {
+            "Image": Image,
+            "ImageDraw": ImageDraw,
+            "ImageFont": MissingImageFont,
+            "Path": Path,
+            "lru_cache": lru_cache,
+            "np": np,
+            "torch": FakeTorch,
+        }
+        exec(compile(module, str(LDM_UTIL_SOURCE), "exec"), namespace)
+        namespace["_text_font_candidates"] = lambda: (
+            Path("/missing/DejaVuSans.ttf"),
+        )
+
+        rendered = namespace["log_txt_as_img"](
+            (128, 64),
+            ["validation bpp=0.395"],
+            size=16,
+        )
+
+        self.assertEqual(tuple(rendered.shape), (1, 3, 64, 128))
+        self.assertGreaterEqual(len(MissingImageFont.truetype_attempts), 1)
+        self.assertEqual(MissingImageFont.default_calls, 1)
 
     def test_active_training_hooks_match_lightning_2_signatures(self):
         train_start = self._class_method(
