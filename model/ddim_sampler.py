@@ -11,7 +11,11 @@ class DDIMSampler(object):
     def __init__(self, model, schedule="linear", **kwargs):
         super().__init__()
         self.model = model
-        self.ddpm_num_timesteps = model.used_timesteps
+        # DiffEIC inherits the standard latent-diffusion schedule contract:
+        # register_schedule() exposes the full diffusion length as
+        # ``num_timesteps``.  ``used_timesteps`` belongs to SpacedSampler's
+        # local schedule construction and is not a DiffEIC model attribute.
+        self.ddpm_num_timesteps = model.num_timesteps
         self.schedule = schedule
 
     def register_buffer(self, name, attr):
