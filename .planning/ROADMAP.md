@@ -30,12 +30,12 @@ Dự án đi từ một codebase Diff-ICMH đã chạy được nhưng **chưa c
 **Requirements**: PRE-01, PRE-02, PRE-03, PRE-04, PRE-05, PRE-06, DATA-02, DATA-03, DATA-05, INFRA-03, INFRA-04, INFRA-05, EVAL-01, EVAL-08
 **Compute budget**: ≤8 CU (~4.5h tương đương L4) — smoke-test ~2K iterations + kill-and-resume test + vài lượt decode pyiqa. Đây là con số ước tính TRƯỚC đo lường; INFRA-03 trong chính phase này sẽ đo throughput thật và hiệu chỉnh lại toàn bộ ngân sách các phase sau.
 **Success Criteria** (what must be TRUE):
-  1. Cài đặt sạch dependencies (`numpy`, `lightning>=2.6`, `pyiqa`, `xformers` khớp ABI torch hiện hành) và `train.py` chạy hết smoke-test ~2K iterations trên bất kỳ tier GPU nào Colab cấp (L4 hoặc A100) mà không cần sửa code tay.
+  1. Cài đặt sạch dependencies (`numpy`, `lightning>=2.6`, `pyiqa`; `xformers` nếu có wheel khớp ABI torch hiện hành) và `train.py` chạy được trên tier L4 do người vận hành chọn thủ công, không tự đổi cấu hình thí nghiệm theo T4/A100.
   2. Kill-and-resume test vượt qua: giết tiến trình training giữa chừng, resume qua `trainer.fit(ckpt_path=...)`, `global_step` và optimizer state tiếp tục đúng chỗ — không phải warm-start lại từ 0.
   3. Checkpoint ghi ra chỉ chứa trọng số trainable (đã loại SD 2.1/VAE/RAM++ đông cứng) với tần suất 500–1000 step, không phình đĩa.
   4. Trên một tập ảnh mẫu nhỏ đã tải, split theo site+burst được dựng và `split_check.py` chạy tự động trước job training/eval, chặn được một trường hợp rò rỉ site/burst cố ý tạo ra để kiểm thử; EXIF/location trên 100 ảnh đầu được xác minh còn dùng được (hoặc fallback JSON của LILA).
   5. Một dòng kết quả (bpp + PSNR/LPIPS từ `pyiqa` trên ảnh decode của checkpoint vừa smoke-train) được ghi vào `results.jsonl` đúng schema cố định, kèm compute-unit đã tiêu **đo được thật** — con số này dùng để hiệu chỉnh ngân sách mọi phase còn lại.
-**Plans**: TBD
+**Plans**: 2 plans — metadata/leakage evidence; Phase 1 closeout and bounded calibration decision
 **UI hint**: no
 
 ### Phase 2: Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline

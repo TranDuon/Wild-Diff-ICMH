@@ -32,7 +32,7 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **INFRA-02**: Lấy mẫu crop có định hướng theo bbox với tỉ lệ cấu hình được, và tỉ lệ crop thực sự chứa động vật được log ra mỗi run
 - [ ] **INFRA-03**: Throughput và mức đốt compute unit **đo thật** bằng smoke-test ~2K iterations, dùng để hiệu chỉnh lại ngân sách của mọi phase còn lại
 - [ ] **INFRA-04**: Ngân sách compute unit được theo dõi liên tục trong `results.jsonl` và đối chiếu lại ở mỗi ranh giới phase, vì tier GPU Colab được cấp không xác định trước
-- [ ] **INFRA-05**: Config training tự thích ứng theo tier GPU được cấp trong session (L4 24GB vs A100 40GB) thay vì hardcode một cấu hình VRAM
+- [ ] **INFRA-05**: Notebook dùng cấu hình L4 24GB đã kiểm chứng; người vận hành chọn L4 thủ công và log ghi rõ GPU thực tế, không tự đổi batch/precision theo T4/A100 làm thay đổi thí nghiệm
 
 ### Eval — Harness đánh giá và nguồn chân lý số liệu
 
