@@ -21,6 +21,11 @@ from model.diffeic import DiffEIC
 from utils.image import pad
 from utils.metrics import compute_psnr, compute_ssim, LPIPS
 from utils.common import instantiate_from_config, load_state_dict
+from utils.checkpoint_contract import (
+    migrate_legacy_entropy_bottleneck_checkpoint,
+    state_dict_shape_mismatches,
+    validate_entropy_bottleneck_checkpoint,
+)
 from utils.file import list_image_files, get_file_name_parts
 from dataset.camera_trap_dataset import encode_domain_metadata, prompt_from_domain_metadata
 
@@ -73,6 +78,20 @@ def _torch_load(path: str):
 
 def _load_checkpoint(model: DiffEIC, path: str, label: str):
     checkpoint = _torch_load(path)
+    checkpoint, migrations = migrate_legacy_entropy_bottleneck_checkpoint(checkpoint)
+    if migrations:
+        print(f"Migrated {len(migrations)} legacy entropy-bottleneck keys in {label} checkpoint")
+    validate_entropy_bottleneck_checkpoint(model, checkpoint)
+    mismatches = state_dict_shape_mismatches(model, checkpoint)
+    if mismatches:
+        preview = "; ".join(
+            f"{key}: checkpoint={checkpoint_shape}, model={model_shape}"
+            for key, checkpoint_shape, model_shape in mismatches[:8]
+        )
+        raise RuntimeError(
+            f"{label} checkpoint has {len(mismatches)} tensor shape mismatch(es). "
+            f"First mismatches: {preview}"
+        )
     state_dict = checkpoint.get("state_dict", checkpoint)
     message = load_state_dict(model, state_dict, strict=False)
     print(f"Loaded {label} checkpoint {path}: {message}")
@@ -277,6 +296,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--steps", default=50, type=int)
     
     parser.add_argument("--output", type=str, default='results/')
+    parser.add_argument("--limit", type=int, default=None, help="process only the first N selected images")
     
     parser.add_argument("--seed", type=int, default=231)
     parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
@@ -302,6 +322,8 @@ def parse_args() -> Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.limit is not None and args.limit <= 0:
+        raise ValueError('--limit must be positive')
     pl.seed_everything(args.seed)
     
     if args.device == "cpu":
@@ -396,6 +418,8 @@ def main() -> None:
         file_paths = list_image_files(args.input, follow_links=True)
     else:
         file_paths = [os.path.join(args.input, row['relative_path']) for row in selected_rows]
+    if args.limit is not None:
+        file_paths = file_paths[:args.limit]
     for file_path in file_paths:
         if not os.path.isfile(file_path):
             raise FileNotFoundError(file_path)

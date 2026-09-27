@@ -34,7 +34,9 @@ cells = [
         - Bước 1–3: phải chạy ở mỗi runtime mới.
         - Bước 4–5: cũng chạy ở mỗi runtime mới; cell tự bỏ qua file đã có trong `/content`.
         - Bước 6: tag lưu trên Drive; cell tự bỏ qua nếu đã đủ, hoặc tiếp tục phần còn thiếu.
-        - Bước 7: chạy smoke test 20 step; checkpoint trên Drive và tự resume.
+        - Bước 7: chạy smoke test 20 step và kiểm tra checkpoint có optimizer/global step.
+        - Bước 8: chạy thêm đúng 1 step từ checkpoint để xác nhận resume toàn trạng thái.
+        - Bước 9: decode 2 ảnh test, tính metric và ghi `results/results.jsonl` trên Drive.
 
         Trong **cùng một runtime**, nếu một cell đã có dấu tích xanh thì không cần chạy lại,
         trừ khi cell đó vừa báo lỗi.
@@ -405,7 +407,12 @@ cells = [
     ),
     code(
         """
-        RUN_DIR = DRIVE_ROOT / 'runs' / 'h1' / SITE.split(':')[-1]
+        # h1_v2 is intentionally fresh: h1/A01 checkpoints created before the
+        # entropy migration fix are unsafe to resume.
+        RUN_DIR = DRIVE_ROOT / 'runs' / 'h1_v2' / SITE.split(':')[-1]
+        import time
+
+        COLAB_CU_PER_HOUR = 1.54  # sửa nếu bảng Tài nguyên hiển thị mức khác
         env = os.environ.copy()
         env.update(
             WILD_DATA_ROOT=str(LOCAL_IMAGES),
@@ -430,6 +437,7 @@ cells = [
         train_log_path.parent.mkdir(parents=True, exist_ok=True)
         print('Log chi tiết:', train_log_path)
 
+        smoke_started = time.monotonic()
         with train_log_path.open('a', encoding='utf-8') as log_stream:
             process = subprocess.Popen(
                 command,
@@ -452,12 +460,158 @@ cells = [
                 f'Smoke test training dừng với mã {return_code}. '
                 f'Traceback đầy đủ đã lưu tại {train_log_path}'
             )
-        print('Smoke test 20 step hoàn tất.')
+        smoke_hours = (time.monotonic() - smoke_started) / 3600
+        smoke_cu_estimate = smoke_hours * COLAB_CU_PER_HOUR
+
+        def latest_full_checkpoint(run_dir):
+            checkpoint_dir = Path(run_dir) / 'checkpoints'
+            last_checkpoint = checkpoint_dir / 'last.ckpt'
+            if last_checkpoint.is_file():
+                return last_checkpoint
+            candidates = list(checkpoint_dir.glob('*.ckpt'))
+            if not candidates:
+                raise FileNotFoundError(f'Không tìm thấy checkpoint trong {checkpoint_dir}')
+            return max(candidates, key=lambda path: path.stat().st_mtime)
+
+        def inspect_full_checkpoint(path):
+            checkpoint = torch.load(path, map_location='cpu', mmap=True, weights_only=False)
+            global_step = int(checkpoint.get('global_step', -1))
+            optimizer_states = checkpoint.get('optimizer_states', [])
+            if global_step < 20:
+                raise RuntimeError(f'Checkpoint mới chỉ ở global_step={global_step}, cần ít nhất 20')
+            if not optimizer_states:
+                raise RuntimeError('Checkpoint không có optimizer_states nên chưa thể chứng minh resume đúng')
+            print('Checkpoint:', path)
+            print('global_step:', global_step)
+            print('optimizer_states:', len(optimizer_states))
+            print('Kích thước:', f'{path.stat().st_size / 2**30:.2f} GiB')
+            return global_step
+
+        PROJECT_CKPT = latest_full_checkpoint(RUN_DIR)
+        SMOKE_GLOBAL_STEP = inspect_full_checkpoint(PROJECT_CKPT)
+        print(f'Smoke test hoàn tất trong {smoke_hours:.2f} giờ (~{smoke_cu_estimate:.2f} CU).')
         """
     ),
     markdown(
         """
-        ## Sau khi smoke test thành công
+        ## Bước 8 — Xác nhận resume checkpoint
+
+        Cell này đặt đích bằng `global_step hiện tại + 1`. Nếu resume đúng, log phải có dòng
+        `Restoring states from ...ckpt` và checkpoint mới phải tăng step trong khi vẫn có
+        `optimizer_states`. Muốn kiểm tra đúng tình huống Colab bị ngắt, hãy **khởi động lại
+        runtime**, chạy lại Bước 1–7 rồi mới chạy cell này; chạy ngay trong cùng runtime vẫn là
+        phép kiểm tra full-state resume hợp lệ.
+        """
+    ),
+    code(
+        """
+        RESUME_TARGET_STEP = SMOKE_GLOBAL_STEP + 1
+        resume_command = [
+            sys.executable, '-u', 'train.py',
+            '--config', 'configs/train_kgalagadi_colab.yaml',
+            '--init-checkpoint', str(AUTHOR_CKPT),
+            f'lightning.trainer.max_steps={RESUME_TARGET_STEP}',
+            'lightning.trainer.limit_val_batches=0',
+        ]
+        resume_log_path = DRIVE_ROOT / 'logs' / f"train_resume_{SITE.replace(':', '_')}.log"
+        print('Lệnh resume:', ' '.join(resume_command))
+        resume_started = time.monotonic()
+        with resume_log_path.open('a', encoding='utf-8') as log_stream:
+            process = subprocess.Popen(
+                resume_command,
+                cwd=REPO,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                print(line, end='')
+                log_stream.write(line)
+                log_stream.flush()
+            return_code = process.wait()
+        if return_code:
+            raise RuntimeError(
+                f'Resume test dừng với mã {return_code}. Traceback đầy đủ: {resume_log_path}'
+            )
+
+        PROJECT_CKPT = latest_full_checkpoint(RUN_DIR)
+        resumed_step = inspect_full_checkpoint(PROJECT_CKPT)
+        if resumed_step < RESUME_TARGET_STEP:
+            raise RuntimeError(
+                f'Resume không tăng global step: trước={SMOKE_GLOBAL_STEP}, sau={resumed_step}'
+            )
+        resume_hours = (time.monotonic() - resume_started) / 3600
+        print(
+            f'RESUME THÀNH CÔNG: {SMOKE_GLOBAL_STEP} -> {resumed_step}; '
+            f'~{resume_hours * COLAB_CU_PER_HOUR:.3f} CU'
+        )
+        """
+    ),
+    markdown(
+        """
+        ## Bước 9 — Decode và đánh giá 2 ảnh test
+
+        Đây là kiểm tra end-to-end, chưa phải số liệu dùng trong báo cáo. Cell chỉ decode 2 ảnh
+        bằng 5 bước DDIM để tiết kiệm CU, sau đó ghi metric tổng hợp vào
+        `MyDrive/wild_diff_icmh/results/results.jsonl`. Khi chạy thí nghiệm chính phải bỏ
+        `--limit 2`, dùng 50 DDIM step và đánh giá toàn bộ test split.
+        """
+    ),
+    code(
+        """
+        SMOKE_DECODE_DIR = Path('/content/results/phase1_h1_smoke')
+        PER_IMAGE_RESULTS = DRIVE_ROOT / 'results' / f'phase1_h1_smoke_{SITE.replace(":", "_")}.jsonl'
+        RESULTS_REGISTRY = DRIVE_ROOT / 'results' / 'results.jsonl'
+        SD_CKPT = CKPT_ROOT / 'sd2p1' / 'v2-1_512-ema-pruned.ckpt'
+        decode_steps = 5
+        decode_started = time.monotonic()
+
+        decode_command = [
+            sys.executable, '-u', 'inference_partition.py',
+            '--ckpt_sd', str(SD_CKPT),
+            '--ckpt_lc', str(PROJECT_CKPT),
+            '--config', 'configs/model/diffeic.yaml',
+            '--input', str(LOCAL_IMAGES),
+            '--output', str(SMOKE_DECODE_DIR),
+            '--manifest', 'data/manifests/kgalagadi_site_split.jsonl',
+            '--tag-cache', str(TAGS_PATH),
+            '--split', 'test', '--site-id', SITE,
+            '--sampler', 'ddim', '--steps', str(decode_steps),
+            '--device', 'cuda', '--limit', '2',
+            'params.c_cfg_scale=3.0',
+        ]
+        print('Decode:', ' '.join(decode_command))
+        subprocess.run(decode_command, cwd=REPO, env=env, check=True)
+
+        decode_hours = (time.monotonic() - decode_started) / 3600
+        decode_cu_estimate = decode_hours * COLAB_CU_PER_HOUR
+        evaluate_command = [
+            sys.executable, '-u', 'tools/evaluate_kgalagadi.py',
+            '--manifest', 'data/manifests/kgalagadi_site_split.jsonl',
+            '--data-root', str(LOCAL_IMAGES),
+            '--reconstruction-root', str(SMOKE_DECODE_DIR),
+            '--split', 'test', '--site-id', SITE,
+            '--method', 'H1', '--limit', '2', '--lpips',
+            '--output', str(PER_IMAGE_RESULTS),
+            '--results-registry', str(RESULTS_REGISTRY),
+            '--exp-id', f'phase1_h1_smoke_{SITE.replace(":", "_")}',
+            '--lambda-rate', str(BPP_WEIGHT),
+            '--ddim-steps', str(decode_steps),
+            '--cu-estimate', str(decode_cu_estimate),
+        ]
+        print('Đánh giá:', ' '.join(evaluate_command))
+        subprocess.run(evaluate_command, cwd=REPO, env=env, check=True)
+        print('END-TO-END THÀNH CÔNG')
+        print('Kết quả từng ảnh:', PER_IMAGE_RESULTS)
+        print('Registry:', RESULTS_REGISTRY)
+        """
+    ),
+    markdown(
+        """
+        ## Sau khi Phase 1 smoke test thành công
 
         Không sửa các cell chuẩn bị phía trên. Khi chạy thí nghiệm dài, đổi riêng cell training
         theo H1/H2/H3. Checkpoint nằm trong `MyDrive/wild_diff_icmh/runs/`; runtime mới vẫn

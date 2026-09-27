@@ -5,6 +5,7 @@ import argparse
 import collections
 import json
 import math
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,7 @@ from PIL import Image
 from dataset.camera_trap_dataset import _box_xywh, _load_detection_map
 from tools.data.split_check import assert_no_leakage
 from utils.metrics import LPIPS, compute_psnr, compute_ssim, compute_ssim_masked
+from utils.results_registry import metric_rows, upsert_jsonl
 
 
 def _load_rows(path, split, site_id):
@@ -58,6 +60,16 @@ def _mean(values):
     return sum(finite) / len(finite) if finite else None
 
 
+def _git_commit():
+    process = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return process.stdout.strip() if process.returncode == 0 else "unknown"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default="data/manifests/kgalagadi_site_split.jsonl")
@@ -68,13 +80,26 @@ def main(argv=None):
     parser.add_argument("--split", default="test")
     parser.add_argument("--site-id", default=None)
     parser.add_argument("--method", required=True, help="baseline, H1, H2 or H3")
+    parser.add_argument("--dataset", default="snapshot_kgalagadi")
+    parser.add_argument("--limit", type=int, default=None, help="evaluate only the first N filtered rows")
     parser.add_argument("--min-detection-confidence", type=float, default=0.2)
     parser.add_argument("--lpips", action="store_true")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--results-registry", default=None, help="optional canonical results.jsonl")
+    parser.add_argument("--exp-id", default=None)
+    parser.add_argument("--lambda-rate", default="unknown")
+    parser.add_argument("--ddim-steps", type=int, default=50)
+    parser.add_argument("--cu-estimate", type=float, default=None)
+    parser.add_argument("--git-commit", default=None)
     args = parser.parse_args(argv)
+
+    if args.limit is not None and args.limit <= 0:
+        parser.error("--limit must be positive")
 
     assert_no_leakage([Path(args.manifest)], build_info=args.build_info)
     rows = _load_rows(args.manifest, args.split, args.site_id)
+    if args.limit is not None:
+        rows = rows[:args.limit]
     if not rows:
         parser.error("manifest filter selected no rows")
     detections = _load_detection_map(args.detections)
@@ -111,7 +136,7 @@ def main(argv=None):
         result = {
             "schema_version": 1,
             "method": args.method,
-            "dataset": "snapshot_kgalagadi",
+            "dataset": args.dataset,
             "split": args.split,
             "image_id": row["image_id"],
             "site_id": row["site_id"],
@@ -158,6 +183,22 @@ def main(argv=None):
         })
     summary_path = output.with_suffix(".summary.json")
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.results_registry:
+        exp_id = args.exp_id or f"{args.method}_{args.site_id or 'all'}_{args.split}"
+        registry_rows = metric_rows(
+            summary,
+            exp_id=exp_id,
+            dataset=args.dataset,
+            lambda_rate=args.lambda_rate,
+            ddim_steps=args.ddim_steps,
+            cu_estimate=args.cu_estimate,
+            git_commit=args.git_commit or _git_commit(),
+            method=args.method,
+            split=args.split,
+            site_id=args.site_id,
+        )
+        upsert_jsonl(args.results_registry, registry_rows)
+        print(f"Upserted {len(registry_rows)} metric rows into {args.results_registry}")
     print(f"Wrote {len(results)} rows to {output} and {summary_path}")
     return 0
 

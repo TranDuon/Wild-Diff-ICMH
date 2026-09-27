@@ -36,6 +36,7 @@ from ldm.modules.diffusionmodules.openaimodel import (
     TimestepBlock
 )
 from ldm.util import log_txt_as_img, exists, instantiate_from_config, default
+from utils.checkpoint_contract import PROJECT_CHECKPOINT_CONTRACT_VERSION
 from utils.common import frozen_module
 
 class CDDM(nn.Module):
@@ -1307,6 +1308,7 @@ class DiffEIC(LatentDiffusion):
         }
 
     def on_save_checkpoint(self, checkpoint):
+        checkpoint["wild_diff_checkpoint_contract_version"] = PROJECT_CHECKPOINT_CONTRACT_VERSION
         if not self.compact_checkpoint:
             return
         keep = self._compact_state_keys()

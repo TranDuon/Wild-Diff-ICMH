@@ -84,12 +84,16 @@ python tools/precompute_ram_tags.py \
 
 Sau đó chạy smoke test 20 step trên `KGA:A01`:
 
+> Dùng `h1_v2` làm run root mới. Checkpoint trong `runs/h1/` được tạo trước
+> bản vá entropy checkpoint nên chỉ giữ để đối chiếu log, không được resume cho
+> thí nghiệm chính.
+
 ```bash
 export WILD_DATA_ROOT=/content/data/wild_diff_icmh/images
 export KGA_SITE_ID=KGA:A01
 export KGA_TAGS=/content/drive/MyDrive/wild_diff_icmh/tags/KGA_A01.jsonl
 export BPP_WEIGHT=2
-export WILD_RUN_DIR=/content/drive/MyDrive/wild_diff_icmh/runs/h1/A01
+export WILD_RUN_DIR=/content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01
 
 python train.py --config configs/train_kgalagadi_colab.yaml \
   --init-checkpoint /content/drive/MyDrive/wild_diff_icmh/checkpoints/difficmh_models/CNscale1.0_1_1_2_2_WTagGCM_bs16x1_lr0.00005_cfg7.0/model.ckpt \
@@ -103,12 +107,23 @@ Nếu runtime ngắt, chạy lại đúng lệnh. `resume_checkpoint: auto` sẽ
 `last.ckpt`, bao gồm model, optimizer và global step. Khi đã đo được thời gian
 và VRAM, bỏ bốn override smoke-test; không nên chạy cả 20 site trước phép đo này.
 
+Notebook hiện kiểm tra ngay sau smoke test rằng checkpoint có `global_step >= 20`
+và có `optimizer_states`. Bước 8 đặt `max_steps` thành step hiện tại cộng 1; chỉ
+khi checkpoint mới tăng step và vẫn giữ optimizer state mới in
+`RESUME THÀNH CÔNG`. Đây là cổng bắt buộc trước khi chạy thí nghiệm dài.
+
+Checkpoint tác giả dùng tên tham số entropy model của CompressAI cũ
+(`_matrixN`, `_biasN`, `_factorN`). Loader của dự án tự chuyển sang tên hiện tại
+(`matrices.N`, `biases.N`, `factors.N`) trước khi kiểm tra shape/nạp trọng số và
+sẽ dừng nếu thiếu khóa hoặc gặp xung đột. Không được bỏ cảnh báo này bằng
+`strict=False`, vì như vậy entropy model có thể bị khởi tạo ngẫu nhiên.
+
 Để chạy tuần tự một số site trong một session:
 
 ```bash
 python tools/train_kgalagadi_sites.py \
   --config configs/train_kgalagadi_colab.yaml \
-  --run-root /content/drive/MyDrive/wild_diff_icmh/runs/h1 \
+  --run-root /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2 \
   --init-checkpoint /content/drive/MyDrive/wild_diff_icmh/checkpoints/difficmh_models/CNscale1.0_1_1_2_2_WTagGCM_bs16x1_lr0.00005_cfg7.0/model.ckpt \
   --max-sites 1
 ```
@@ -133,7 +148,7 @@ export KGA_DETECTIONS=/content/drive/MyDrive/wild_diff_icmh/detections/kgalagadi
 python tools/train_kgalagadi_sites.py \
   --config configs/train_kgalagadi_h2.yaml \
   --run-root /content/drive/MyDrive/wild_diff_icmh/runs/h2 \
-  --init-checkpoint-template '/content/drive/MyDrive/wild_diff_icmh/runs/h1/{site}/checkpoints/best.ckpt' \
+  --init-checkpoint-template '/content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/{site}/checkpoints/best.ckpt' \
   --max-sites 1
 ```
 
@@ -145,7 +160,7 @@ không chỉ so với H1 trước khi train thêm:
 python tools/train_kgalagadi_sites.py \
   --config configs/train_kgalagadi_h1_control.yaml \
   --run-root /content/drive/MyDrive/wild_diff_icmh/runs/h1_control \
-  --init-checkpoint-template '/content/drive/MyDrive/wild_diff_icmh/runs/h1/{site}/checkpoints/best.ckpt' \
+  --init-checkpoint-template '/content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/{site}/checkpoints/best.ckpt' \
   --max-sites 1
 ```
 
@@ -165,7 +180,7 @@ Trước hết decode H1 với tag RAM++ đầy đủ đã cache (không có met
 ```bash
 python inference_partition.py \
   --ckpt_sd checkpoints/sd2p1/v2-1_512-ema-pruned.ckpt \
-  --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1/A01/checkpoints/best.ckpt \
+  --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/checkpoints/best.ckpt \
   --config configs/model/diffeic.yaml \
   --input /content/data/wild_diff_icmh/images \
   --output /content/results/h1_A01 \
@@ -180,7 +195,7 @@ Sau đó decode lại đúng checkpoint/ảnh/seed nhưng bật hai tầng H3:
 ```bash
 python inference_partition.py \
   --ckpt_sd checkpoints/sd2p1/v2-1_512-ema-pruned.ckpt \
-  --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1/A01/checkpoints/best.ckpt \
+  --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/checkpoints/best.ckpt \
   --config configs/model/diffeic.yaml \
   --input /content/data/wild_diff_icmh/images \
   --output /content/results/h3_A01 \
@@ -204,12 +219,23 @@ python tools/evaluate_kgalagadi.py \
   --detections "$KGA_DETECTIONS" \
   --site-id KGA:A01 \
   --method H1 \
-  --output /content/drive/MyDrive/wild_diff_icmh/results/h1_A01.jsonl
+  --output /content/drive/MyDrive/wild_diff_icmh/results/h1_A01.jsonl \
+  --results-registry /content/drive/MyDrive/wild_diff_icmh/results/results.jsonl \
+  --exp-id h1_A01_bpp2 \
+  --lambda-rate 2 \
+  --ddim-steps 50 \
+  --cu-estimate 0.0
 ```
 
 Kết quả gồm BPP, tỉ lệ nén RGB 24-bit, PSNR, SSIM và foreground SSIM. Muốn có
 đường RD như bài so sánh phải lặp cùng protocol cho nhiều checkpoint BPP_WEIGHT
 (2, 4, 8, 16, 32); không kết luận hơn/kém từ một điểm duy nhất.
+
+`--cu-estimate 0.0` trong ví dụ phải được thay bằng số CU ước lượng của lượt
+decode/evaluate thực tế. Bước 9 trong notebook tự đo thời gian, nhân với tốc độ
+CU/giờ đã khai báo và ghi registry. Bước 9 chỉ dùng 2 ảnh và 5 DDIM step nên chỉ
+là kiểm tra end-to-end; số liệu báo cáo phải bỏ `--limit`, dùng 50 step và toàn
+bộ test split.
 
 ## Quy tắc tiết kiệm tài nguyên
 

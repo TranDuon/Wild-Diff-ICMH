@@ -23,7 +23,7 @@ def main(argv=None):
     parser.add_argument(
         "--init-checkpoint-template",
         default=None,
-        help="For H2/control, e.g. /drive/runs/h1/{site}/checkpoints/best.ckpt",
+        help="For H2/control, e.g. /drive/runs/h1_v2/{site}/checkpoints/best.ckpt",
     )
     parser.add_argument("--site", action="append", default=[], help="repeat to select specific KGA:A01 sites")
     parser.add_argument("--max-sites", type=int, default=None, help="process only this many sites this session")

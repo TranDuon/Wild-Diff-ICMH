@@ -44,7 +44,7 @@ lightning:
     devices: 1
     strategy: auto
     precision: bf16-mixed
-    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h1_A01}
+    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h1_v2_A01}
     max_epochs: 5
     max_steps: -1
     max_time: "00:05:30:00"

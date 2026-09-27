@@ -20,7 +20,12 @@ import lightning.pytorch as pl
 import torch
 from omegaconf import OmegaConf
 
-from utils.checkpoint_contract import state_dict_shape_mismatches
+from utils.checkpoint_contract import (
+    migrate_legacy_entropy_bottleneck_checkpoint,
+    state_dict_shape_mismatches,
+    validate_entropy_bottleneck_checkpoint,
+    validate_project_resume_checkpoint,
+)
 from utils.common import instantiate_from_config, load_state_dict
 
 
@@ -220,6 +225,14 @@ def main() -> None:
     resume_value = args.resume if args.resume is not None else config.model.get("resume_checkpoint")
     resume_path = _resolve_resume(resume_value, save_dir)
     print("[Train 4/6] Resolving author warm start / project resume", flush=True)
+    if resume_path:
+        resume_checkpoint = _torch_load(resume_path)
+        validate_project_resume_checkpoint(resume_checkpoint)
+        print(
+            "Validated project checkpoint contract, optimizer state and global step",
+            flush=True,
+        )
+        del resume_checkpoint
     if init_path and not resume_path:
         print(f"Loading author checkpoint: {init_path}", flush=True)
         checkpoint = _torch_load(str(init_path))
@@ -228,6 +241,16 @@ def main() -> None:
             checkpoint = {
                 "state_dict": {key: value for key, value in state.items() if key.startswith("preprocess_model.")}
             }
+        checkpoint, entropy_migrations = migrate_legacy_entropy_bottleneck_checkpoint(
+            checkpoint
+        )
+        if entropy_migrations:
+            print(
+                "Migrated "
+                f"{len(entropy_migrations)} legacy CompressAI entropy-bottleneck keys",
+                flush=True,
+            )
+        validate_entropy_bottleneck_checkpoint(model, checkpoint)
         mismatches = state_dict_shape_mismatches(model, checkpoint)
         if mismatches:
             preview = "; ".join(
