@@ -24,6 +24,7 @@ RAM_SOURCE = ROOT / "src" / "recognize-anything"
 RAM_BERT = RAM_SOURCE / "ram" / "models" / "bert.py"
 RAM_PLUS = RAM_SOURCE / "ram" / "models" / "ram_plus.py"
 RAM_TAGGER = ROOT / "tools" / "precompute_ram_tags.py"
+EVALUATOR = ROOT / "tools" / "evaluate_kgalagadi.py"
 TRAIN_ENTRYPOINT = ROOT / "train.py"
 TRAIN_CONFIG = ROOT / "configs" / "train_kgalagadi_colab.yaml"
 DDPM_SOURCE = ROOT / "ldm" / "models" / "diffusion" / "ddpm.py"
@@ -447,6 +448,18 @@ class ColabDependencyContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Cache RAM++ tags once", result.stdout)
         self.assertNotIn("No module named 'model'", result.stderr)
+
+    def test_evaluator_direct_script_bootstraps_repo_root_before_project_imports(self):
+        source = EVALUATOR.read_text(encoding="utf-8")
+        root_setup = "REPO_ROOT = Path(__file__).resolve().parents[1]"
+        path_setup = "sys.path.insert(0, str(REPO_ROOT))"
+        project_import = "from dataset.camera_trap_dataset import"
+
+        self.assertIn(root_setup, source)
+        self.assertIn(path_setup, source)
+        self.assertIn(project_import, source)
+        self.assertLess(source.index(root_setup), source.index(project_import))
+        self.assertLess(source.index(path_setup), source.index(project_import))
 
     def test_generated_step_six_is_t4_safe_and_preserves_child_traceback(self):
         generator = GENERATOR.read_text(encoding="utf-8")

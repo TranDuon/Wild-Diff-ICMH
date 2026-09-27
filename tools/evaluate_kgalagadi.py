@@ -6,7 +6,16 @@ import collections
 import json
 import math
 import subprocess
+import sys
 from pathlib import Path
+
+# Direct execution (``python tools/evaluate_kgalagadi.py``) makes Python put
+# ``tools/`` rather than the repository root first on ``sys.path``.  The Colab
+# notebook invokes this file directly, so bootstrap the project packages before
+# importing ``dataset`` or ``utils`` below.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np
 import torch
