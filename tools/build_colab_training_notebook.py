@@ -93,8 +93,8 @@ cells = [
         ).strip()
         if local_changes:
             raise RuntimeError(
-                'Thư mục code Colab có sửa cục bộ nên chưa thể pull an toàn:\n'
-                f'{local_changes}\n'
+                'Thư mục code Colab có sửa cục bộ nên chưa thể pull an toàn:\\n'
+                f'{local_changes}\\n'
                 'Không sửa file trong /content/Wild-Diff-ICMH; hãy gửi phần này để xử lý.'
             )
 

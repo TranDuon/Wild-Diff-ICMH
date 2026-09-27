@@ -8,6 +8,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_every_generated_notebook_code_cell_compiles():
+    notebook = json.loads(
+        (ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb").read_text(encoding="utf-8")
+    )
+
+    for index, cell in enumerate(notebook["cells"]):
+        if cell["cell_type"] == "code":
+            compile(cell["source"], f"notebook-cell-{index}", "exec")
+
+
 def test_inference_migrates_checkpoint_before_validation_and_load():
     source = (ROOT / "inference_partition.py").read_text(encoding="utf-8")
     function = source[source.index("def _load_checkpoint"):source.index("def process")]
