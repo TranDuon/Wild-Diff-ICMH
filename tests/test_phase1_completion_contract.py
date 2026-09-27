@@ -46,6 +46,7 @@ def test_generated_notebook_checks_resume_and_end_to_end_metrics():
     )
     assert "optimizer_states" in code
     assert "RESUME_TARGET_STEP = SMOKE_GLOBAL_STEP + 1" in code
+    assert "'--resume', str(PROJECT_CKPT)" in code
     assert "RESUME THÀNH CÔNG" in code
     assert "'h1_v2'" in code
     assert "'--limit', '2'" in code

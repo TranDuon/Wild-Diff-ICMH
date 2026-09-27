@@ -549,7 +549,9 @@ cells = [
         `Restoring states from ...ckpt` và checkpoint mới phải tăng step trong khi vẫn có
         `optimizer_states`. Muốn kiểm tra đúng tình huống Colab bị ngắt, hãy **khởi động lại
         runtime**, chạy lại Bước 1–7 rồi mới chạy cell này; chạy ngay trong cùng runtime vẫn là
-        phép kiểm tra full-state resume hợp lệ.
+        phép kiểm tra full-state resume hợp lệ. Nếu checkpoint cũ được báo là hỏng hoặc không
+        đọc được, chạy lại **Bước 7 đúng một lần** để bỏ qua file hỏng và tạo `last.ckpt` mới
+        theo cơ chế ghi an toàn, rồi mới chạy lại Bước 8.
         """
     ),
     code(
@@ -559,6 +561,7 @@ cells = [
             sys.executable, '-u', 'train.py',
             '--config', 'configs/train_kgalagadi_colab.yaml',
             '--init-checkpoint', str(AUTHOR_CKPT),
+            '--resume', str(PROJECT_CKPT),
             f'lightning.trainer.max_steps={RESUME_TARGET_STEP}',
             'lightning.trainer.limit_val_batches=0',
         ]

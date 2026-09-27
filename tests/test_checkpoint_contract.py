@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import unittest
 import ast
+import os
 import tempfile
 from pathlib import Path
+from typing import Optional
+from unittest import mock
 
 from utils.checkpoint_contract import (
     PROJECT_CHECKPOINT_CONTRACT_VERSION,
@@ -131,15 +134,27 @@ class EntropyCheckpointMigrationTests(unittest.TestCase):
             node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name == "_save_final_checkpoint"
         )
-        namespace = {"Path": Path}
+        valid_checkpoint = {
+            "wild_diff_checkpoint_contract_version": PROJECT_CHECKPOINT_CONTRACT_VERSION,
+            "global_step": 20,
+            "optimizer_states": [{"state": {}}],
+        }
+        namespace = {
+            "Path": Path,
+            "os": os,
+            "_torch_load": lambda path: valid_checkpoint,
+            "validate_project_resume_checkpoint": validate_project_resume_checkpoint,
+        }
         exec(compile(ast.Module(body=[function], type_ignores=[]), "train.py", "exec"), namespace)
 
         class TrainerStub:
             def __init__(self):
                 self.weights_only = None
+                self.saved_path = None
 
             def save_checkpoint(self, path, weights_only):
                 self.weights_only = weights_only
+                self.saved_path = Path(path)
                 Path(path).write_bytes(b"full-state")
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -147,10 +162,70 @@ class EntropyCheckpointMigrationTests(unittest.TestCase):
             output = namespace["_save_final_checkpoint"](trainer, temporary)
             self.assertEqual(Path(output).read_bytes(), b"full-state")
             self.assertFalse(trainer.weights_only)
+            self.assertEqual(trainer.saved_path.name, "last.ckpt.part")
+            self.assertFalse(trainer.saved_path.exists())
 
         fit = source.index("trainer.fit(")
         final_save = source.index("_save_final_checkpoint(trainer, save_dir)")
         self.assertLess(fit, final_save)
+
+    def test_auto_resume_stages_locally_and_skips_corrupt_latest_checkpoint(self):
+        source = Path("train.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        function_names = {
+            "_checkpoint_candidates",
+            "_stage_resume_checkpoint",
+            "_prepare_resume_checkpoint",
+            "_resolve_resume",
+        }
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in function_names
+        ]
+        valid_checkpoint = {
+            "wild_diff_checkpoint_contract_version": PROJECT_CHECKPOINT_CONTRACT_VERSION,
+            "global_step": 20,
+            "optimizer_states": [{"state": {}}],
+        }
+
+        def load_stub(path):
+            if Path(path).read_bytes() == b"corrupt":
+                raise RuntimeError("invalid header or archive is corrupted")
+            return valid_checkpoint
+
+        namespace = {
+            "Path": Path,
+            "Optional": Optional,
+            "os": os,
+            "shutil": __import__("shutil"),
+            "tempfile": tempfile,
+            "_torch_load": load_stub,
+            "validate_project_resume_checkpoint": validate_project_resume_checkpoint,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), "train.py", "exec"),
+            namespace,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "run"
+            checkpoint_dir = root / "checkpoints"
+            checkpoint_dir.mkdir(parents=True)
+            fallback = checkpoint_dir / "step-000020.ckpt"
+            latest = checkpoint_dir / "last.ckpt"
+            fallback.write_bytes(b"valid")
+            latest.write_bytes(b"corrupt")
+            os.utime(fallback, (1, 1))
+            os.utime(latest, (2, 2))
+
+            with mock.patch.dict(
+                os.environ,
+                {"WILD_RESUME_CACHE_DIR": str(Path(temporary) / "cache")},
+            ):
+                staged, checkpoint = namespace["_resolve_resume"]("auto", str(root))
+
+            self.assertEqual(Path(staged).read_bytes(), b"valid")
+            self.assertEqual(checkpoint["global_step"], 20)
 
     def test_inference_prefers_model_config_saved_with_project_checkpoint(self):
         with tempfile.TemporaryDirectory() as temporary:

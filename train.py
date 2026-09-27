@@ -12,6 +12,8 @@ import importlib.util
 import json
 import os
 import re
+import shutil
+import tempfile
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
@@ -148,37 +150,85 @@ def _run_asset_preflight(config, rows) -> None:
     print(f"Asset preflight passed: {len(selected)} image(s) for {site_id or 'all sites'}")
 
 
-def _latest_checkpoint(root_dir: str) -> Optional[str]:
+def _checkpoint_candidates(root_dir: str) -> list[Path]:
     checkpoint_dir = Path(root_dir) / "checkpoints"
     candidates = list(checkpoint_dir.glob("*.ckpt")) if checkpoint_dir.exists() else []
-    if not candidates:
-        return None
-    return str(max(candidates, key=lambda path: path.stat().st_mtime))
+    return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
-def _resolve_resume(value: Optional[str], root_dir: str) -> Optional[str]:
+def _stage_resume_checkpoint(source: Path) -> Path:
+    """Copy a Drive checkpoint to stable local storage before loading it twice."""
+    stage_root = Path(
+        os.environ.get("WILD_RESUME_CACHE_DIR", tempfile.gettempdir())
+    ) / "wild_diff_icmh_resume"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    stat = source.stat()
+    staged = stage_root / f"{source.stem}-{stat.st_size}-{stat.st_mtime_ns}.ckpt"
+    if staged.is_file() and staged.stat().st_size == stat.st_size:
+        print(f"Using staged resume checkpoint: {staged}", flush=True)
+        return staged
+
+    partial = staged.with_name(staged.name + ".part")
+    print(f"Staging resume checkpoint locally: {source} -> {staged}", flush=True)
+    shutil.copyfile(source, partial)
+    copied_size = partial.stat().st_size
+    if copied_size != stat.st_size:
+        raise RuntimeError(
+            f"incomplete checkpoint copy: expected {stat.st_size} bytes, got {copied_size}"
+        )
+    os.replace(partial, staged)
+    return staged
+
+
+def _prepare_resume_checkpoint(source: Path):
+    staged = _stage_resume_checkpoint(source)
+    checkpoint = _torch_load(str(staged))
+    validate_project_resume_checkpoint(checkpoint)
+    return str(staged), checkpoint
+
+
+def _resolve_resume(value: Optional[str], root_dir: str):
     if not value:
-        return None
+        return None, None
     if value == "auto":
-        latest = _latest_checkpoint(root_dir)
-        if latest:
-            print(f"Auto-resume selected {latest}")
-        else:
-            print("Auto-resume found no project checkpoint; starting a new run")
-        return latest
+        for source in _checkpoint_candidates(root_dir):
+            try:
+                staged, checkpoint = _prepare_resume_checkpoint(source)
+            except Exception as error:
+                print(
+                    f"Auto-resume skipped unusable checkpoint {source}: "
+                    f"{type(error).__name__}: {error}",
+                    flush=True,
+                )
+                continue
+            print(f"Auto-resume selected {source}", flush=True)
+            return staged, checkpoint
+        print("Auto-resume found no usable project checkpoint; starting a new run")
+        return None, None
     path = Path(value)
     if not path.is_file():
         raise FileNotFoundError(f"resume checkpoint not found: {path}")
-    return str(path)
+    try:
+        return _prepare_resume_checkpoint(path)
+    except Exception as error:
+        raise RuntimeError(
+            f"resume checkpoint is unreadable or incomplete: {path}. "
+            "Rerun notebook Step 7 to rebuild a valid checkpoint."
+        ) from error
 
 
 def _save_final_checkpoint(trainer, root_dir: str) -> str:
-    """Persist full training state even when a short run ends before cadence."""
+    """Atomically publish full state even when a short run ends before cadence."""
     path = Path(root_dir) / "checkpoints" / "last.ckpt"
     path.parent.mkdir(parents=True, exist_ok=True)
-    trainer.save_checkpoint(str(path), weights_only=False)
-    if not path.is_file():
-        raise RuntimeError(f"trainer did not create final checkpoint: {path}")
+    partial = path.with_name(path.name + ".part")
+    trainer.save_checkpoint(str(partial), weights_only=False)
+    if not partial.is_file():
+        raise RuntimeError(f"trainer did not create staged checkpoint: {partial}")
+    checkpoint = _torch_load(str(partial))
+    validate_project_resume_checkpoint(checkpoint)
+    del checkpoint
+    os.replace(partial, path)
     print(f"Saved final full-state checkpoint: {path}", flush=True)
     return str(path)
 
@@ -234,11 +284,9 @@ def main() -> None:
     OmegaConf.save(model_config, Path(save_dir) / "config_model.yaml")
 
     resume_value = args.resume if args.resume is not None else config.model.get("resume_checkpoint")
-    resume_path = _resolve_resume(resume_value, save_dir)
+    resume_path, resume_checkpoint = _resolve_resume(resume_value, save_dir)
     print("[Train 4/6] Resolving author warm start / project resume", flush=True)
     if resume_path:
-        resume_checkpoint = _torch_load(resume_path)
-        validate_project_resume_checkpoint(resume_checkpoint)
         print(
             "Validated project checkpoint contract, optimizer state and global step",
             flush=True,
