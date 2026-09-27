@@ -4,6 +4,7 @@ from utils.image_geometry import (
     center_crop_boxes,
     center_crop_geometry,
     center_crop_image,
+    resolve_crop_size,
 )
 
 
@@ -27,4 +28,10 @@ def test_boxes_are_scaled_clipped_and_shifted_into_crop_coordinates():
         256,
     )
     assert boxes == [(0.0, 0.0, 92.0, 98.0)]
+
+
+def test_manifest_commands_default_to_project_crop_for_stale_colab_cells():
+    assert resolve_crop_size(None, manifest_supplied=True) == 256
+    assert resolve_crop_size(None, manifest_supplied=False) is None
+    assert resolve_crop_size(512, manifest_supplied=True) == 512
 

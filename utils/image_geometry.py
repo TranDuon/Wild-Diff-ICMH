@@ -7,6 +7,26 @@ from PIL import Image
 
 
 Box = Tuple[float, float, float, float]
+CAMERA_TRAP_CROP_SIZE = 256
+
+
+def resolve_crop_size(
+    requested_crop_size: int | None,
+    *,
+    manifest_supplied: bool,
+) -> int | None:
+    """Use the project crop for manifest-backed camera-trap commands.
+
+    This fallback keeps already-open Colab cells safe after ``git pull``:
+    their visible command text does not refresh, but the pulled CLI still
+    adopts the same 256×256 protocol.  Non-manifest usage retains the legacy
+    full-resolution behavior unless a crop is explicitly requested.
+    """
+    if requested_crop_size is not None:
+        if requested_crop_size <= 0:
+            raise ValueError("crop_size must be positive")
+        return requested_crop_size
+    return CAMERA_TRAP_CROP_SIZE if manifest_supplied else None
 
 
 def center_crop_geometry(

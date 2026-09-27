@@ -40,8 +40,8 @@ next_action: Pull the fix in Colab and rerun Step 9 only.
 ## Resolution
 
 root_cause: Step 9 decoded native-resolution camera-trap images instead of the project's 256×256 training/evaluation crop.
-fix: Add a shared deterministic center-crop geometry contract, expose `--crop-size` in decode/evaluation, and make Step 9 pass 256 to both commands.
-verification: Generated notebook passes the shared crop contract; `python -m pytest -q` passes with 88 passed and 2 skipped; modified Python files compile successfully.
+fix: Add a shared deterministic center-crop geometry contract, expose `--crop-size` in decode/evaluation, make Step 9 pass 256 to both commands, and default manifest-backed CLI runs to 256 so already-open Colab cells also become safe immediately after pull.
+verification: Generated notebook passes the shared crop contract; full suite and stale-cell fallback tests pass; modified Python files compile successfully.
 files_changed:
   - utils/image_geometry.py
   - inference_partition.py

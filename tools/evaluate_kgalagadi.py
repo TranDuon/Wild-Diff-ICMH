@@ -14,7 +14,7 @@ from PIL import Image
 
 from dataset.camera_trap_dataset import _box_xywh, _load_detection_map
 from tools.data.split_check import assert_no_leakage
-from utils.image_geometry import center_crop_boxes, center_crop_image
+from utils.image_geometry import center_crop_boxes, center_crop_image, resolve_crop_size
 from utils.metrics import LPIPS, compute_psnr, compute_ssim, compute_ssim_masked
 from utils.results_registry import metric_rows, upsert_jsonl
 
@@ -103,8 +103,15 @@ def main(argv=None):
 
     if args.limit is not None and args.limit <= 0:
         parser.error("--limit must be positive")
-    if args.crop_size is not None and args.crop_size <= 0:
-        parser.error("--crop-size must be positive")
+    try:
+        requested_crop_size = args.crop_size
+        args.crop_size = resolve_crop_size(
+            requested_crop_size, manifest_supplied=bool(args.manifest)
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    if requested_crop_size is None and args.crop_size is not None:
+        print(f"Manifest input: defaulting to a safe {args.crop_size}x{args.crop_size} center crop")
 
     assert_no_leakage([Path(args.manifest)], build_info=args.build_info)
     rows = _load_rows(args.manifest, args.split, args.site_id)

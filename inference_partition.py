@@ -19,7 +19,7 @@ from model.spaced_sampler import SpacedSampler
 from model.ddim_sampler import DDIMSampler
 from model.diffeic import DiffEIC
 from utils.image import pad
-from utils.image_geometry import center_crop_image
+from utils.image_geometry import center_crop_image, resolve_crop_size
 from utils.metrics import compute_psnr, compute_ssim, LPIPS
 from utils.common import instantiate_from_config, load_state_dict
 from utils.checkpoint_contract import (
@@ -337,8 +337,12 @@ def main() -> None:
     args = parse_args()
     if args.limit is not None and args.limit <= 0:
         raise ValueError('--limit must be positive')
-    if args.crop_size is not None and args.crop_size <= 0:
-        raise ValueError('--crop-size must be positive')
+    requested_crop_size = args.crop_size
+    args.crop_size = resolve_crop_size(
+        requested_crop_size, manifest_supplied=bool(args.manifest)
+    )
+    if requested_crop_size is None and args.crop_size is not None:
+        print(f"Manifest input: defaulting to a safe {args.crop_size}x{args.crop_size} center crop")
     pl.seed_everything(args.seed)
     
     if args.device == "cpu":
