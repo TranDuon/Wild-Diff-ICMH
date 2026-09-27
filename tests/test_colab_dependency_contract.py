@@ -461,7 +461,7 @@ class ColabDependencyContractTests(unittest.TestCase):
         self.assertLess(source.index(root_setup), source.index(project_import))
         self.assertLess(source.index(path_setup), source.index(project_import))
 
-    def test_generated_step_six_is_t4_safe_and_preserves_child_traceback(self):
+    def test_generated_step_six_uses_reviewed_l4_setting_and_preserves_child_traceback(self):
         generator = GENERATOR.read_text(encoding="utf-8")
         notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
         code = "\n".join(
@@ -471,7 +471,8 @@ class ColabDependencyContractTests(unittest.TestCase):
         )
 
         for source in (generator, code):
-            self.assertIn("ram_batch_size = 1 if gpu_memory_gib < 20 else 2", source)
+            self.assertIn("ram_batch_size = 2", source)
+            self.assertNotIn("gpu_memory_gib < 20", source)
             self.assertNotIn("'--batch-size', '8'", source)
             self.assertIn("stderr=subprocess.STDOUT", source)
             self.assertIn("tag_log_path", source)

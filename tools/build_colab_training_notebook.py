@@ -37,6 +37,7 @@ cells = [
         - Bước 7: chạy smoke test 20 step và kiểm tra checkpoint có optimizer/global step.
         - Bước 8: chạy thêm đúng 1 step từ checkpoint để xác nhận resume toàn trạng thái.
         - Bước 9: decode 2 ảnh test, tính metric và ghi `results/results.jsonl` trên Drive.
+        - Bước 10: audit metadata 100 ảnh và ghi báo cáo khép Phase 1; không chạy thêm GPU job.
 
         Trong **cùng một runtime**, nếu một cell đã có dấu tích xanh thì không cần chạy lại,
         trừ khi cell đó vừa báo lỗi.
@@ -401,15 +402,14 @@ cells = [
             print(f'Tags đã đủ: {completed_count}/{len(site_rows)} — bỏ qua.')
         else:
             print(f'Tiếp tục tạo tags: {completed_count}/{len(site_rows)} đã có.')
-            gpu_memory_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
-            # RAM++/Swin-L is large.  Batch 8 can OOM on the 16 GiB T4 that
-            # Colab sometimes assigns even when a notebook was tested on L4.
-            ram_batch_size = 1 if gpu_memory_gib < 20 else 2
+            # L4 is the project's operator-selected Colab tier. Keep one reviewed
+            # setting instead of silently changing the experiment on another GPU.
+            ram_batch_size = 2
             ram_num_workers = min(2, os.cpu_count() or 1)
             tag_log_path = DRIVE_ROOT / 'logs' / f'ram_tags_{SITE.replace(":", "_")}.log'
             tag_log_path.parent.mkdir(parents=True, exist_ok=True)
             print(
-                f'RAM++: GPU={gpu_memory_gib:.1f} GiB, batch={ram_batch_size}, '
+                f'RAM++: GPU={torch.cuda.get_device_name(0)}, batch={ram_batch_size}, '
                 f'workers={ram_num_workers}'
             )
             print('Log chi tiết:', tag_log_path)
@@ -689,11 +689,81 @@ cells = [
     ),
     markdown(
         """
+        ## Bước 10 — Khép Phase 1 và dự báo chi phí 2K step
+
+        Chạy **một lần sau khi Bước 7–9 đã thành công trong cùng runtime**. Cell này chỉ
+        đọc artifact đã có, audit metadata 100 ảnh và ghi hai báo cáo JSON lên Drive;
+        **không train, không decode và không tự chạy 2K step**. Báo cáo sẽ nói rõ có nên
+        chạy calibration 2K hay dừng vì dự báo vượt phần ngân sách còn lại.
+        """
+    ),
+    code(
+        """
+        METADATA_REPORT = DRIVE_ROOT / 'results' / f"phase1_metadata_{SITE.replace(':', '_')}.json"
+        PHASE1_CLOSEOUT = DRIVE_ROOT / 'results' / f"phase1_closeout_{SITE.replace(':', '_')}.json"
+        EXP_ID = f'phase1_h1_smoke_{SITE.replace(":", "_")}'
+
+        metadata_command = [
+            sys.executable, '-u', 'tools/data/audit_metadata.py',
+            '--manifest', 'data/manifests/kgalagadi_site_split.jsonl',
+            '--site-id', SITE,
+            '--sample-size', '100',
+            '--data-root', str(LOCAL_IMAGES),
+            '--output', str(METADATA_REPORT),
+        ]
+        print('Audit metadata:', ' '.join(metadata_command))
+        subprocess.run(metadata_command, cwd=REPO, check=True)
+
+        git_commit = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'], cwd=REPO, text=True
+        ).strip()
+        consumed_cu_estimate = (
+            smoke_cu_estimate
+            + resume_hours * COLAB_CU_PER_HOUR
+            + decode_cu_estimate
+        )
+        closeout_command = [
+            sys.executable, '-u', 'tools/phase1_closeout.py',
+            '--manifest', 'data/manifests/kgalagadi_site_split.jsonl',
+            '--metadata-report', str(METADATA_REPORT),
+            '--results-registry', str(RESULTS_REGISTRY),
+            '--exp-id', EXP_ID,
+            '--checkpoint', str(PROJECT_CKPT),
+            '--resume-before', str(SMOKE_GLOBAL_STEP),
+            '--resume-after', str(resumed_step),
+            '--smoke-steps', '20',
+            '--smoke-elapsed-seconds', str(smoke_hours * 3600),
+            '--consumed-cu-estimate', str(consumed_cu_estimate),
+            '--cu-per-hour', str(COLAB_CU_PER_HOUR),
+            '--phase-budget-cu', '8',
+            '--calibration-target-steps', '2000',
+            '--gpu-name', torch.cuda.get_device_name(0),
+            '--git-commit', git_commit,
+            '--output', str(PHASE1_CLOSEOUT),
+        ]
+        print('Closeout:', ' '.join(closeout_command))
+        subprocess.run(closeout_command, cwd=REPO, check=True)
+
+        closeout = json.loads(PHASE1_CLOSEOUT.read_text(encoding='utf-8'))
+        calibration = closeout['calibration']
+        print('PHASE 1 CLOSEOUT THÀNH CÔNG')
+        print('Metadata:', METADATA_REPORT)
+        print('Closeout:', PHASE1_CLOSEOUT)
+        print(
+            f"Dự báo 2K: {calibration['projected_elapsed_seconds'] / 3600:.2f} giờ, "
+            f"~{calibration['projected_cu_estimate']:.2f} CU"
+        )
+        print('Quyết định:', calibration['recommendation'])
+        """
+    ),
+    markdown(
+        """
         ## Sau khi Phase 1 smoke test thành công
 
-        Không sửa các cell chuẩn bị phía trên. Khi chạy thí nghiệm dài, đổi riêng cell training
-        theo H1/H2/H3. Checkpoint nằm trong `MyDrive/wild_diff_icmh/runs/`; runtime mới vẫn
-        chạy lại Bước 1–6 trước, sau đó training tự resume checkpoint mới nhất.
+        Sau Bước 10, dùng quyết định trong `phase1_closeout_*.json` để cập nhật ngân sách.
+        Không tự chạy 2K nếu báo cáo ghi `do_not_run_2k`. Checkpoint nằm trong
+        `MyDrive/wild_diff_icmh/runs/`; runtime mới vẫn chạy lại Bước 1–6 trước, sau đó
+        training tự resume checkpoint mới nhất.
         """
     ),
 ]

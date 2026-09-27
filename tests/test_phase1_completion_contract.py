@@ -57,6 +57,29 @@ def test_generated_notebook_checks_resume_and_end_to_end_metrics():
     assert code.count("'--crop-size', '256'") == 2
 
 
+def test_generated_notebook_has_cpu_only_phase1_closeout_cell():
+    notebook = json.loads(
+        (ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb").read_text(encoding="utf-8")
+    )
+    markdown_text = "\n".join(
+        cell["source"] for cell in notebook["cells"] if cell["cell_type"] == "markdown"
+    )
+    code_text = "\n".join(
+        cell["source"] for cell in notebook["cells"] if cell["cell_type"] == "code"
+    )
+    assert "Bước 10 — Khép Phase 1" in markdown_text
+    assert "tools/data/audit_metadata.py" in code_text
+    assert "tools/phase1_closeout.py" in code_text
+    assert "--calibration-target-steps', '2000'" in code_text
+    assert "PHASE 1 CLOSEOUT THÀNH CÔNG" in code_text
+    closeout_cell = next(
+        cell["source"] for cell in notebook["cells"]
+        if cell["cell_type"] == "code" and "PHASE1_CLOSEOUT =" in cell["source"]
+    )
+    assert "train.py" not in closeout_cell
+    assert "inference_partition.py" not in closeout_cell
+
+
 def test_generated_notebook_has_permanent_hotfix_pull_cell():
     notebook = json.loads(
         (ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb").read_text(encoding="utf-8")
