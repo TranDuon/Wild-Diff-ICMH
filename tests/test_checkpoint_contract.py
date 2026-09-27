@@ -10,6 +10,7 @@ from pathlib import Path
 from utils.checkpoint_contract import (
     PROJECT_CHECKPOINT_CONTRACT_VERSION,
     migrate_legacy_entropy_bottleneck_checkpoint,
+    resolve_run_model_config,
     validate_entropy_bottleneck_checkpoint,
     validate_project_resume_checkpoint,
 )
@@ -150,6 +151,26 @@ class EntropyCheckpointMigrationTests(unittest.TestCase):
         fit = source.index("trainer.fit(")
         final_save = source.index("_save_final_checkpoint(trainer, save_dir)")
         self.assertLess(fit, final_save)
+
+    def test_inference_prefers_model_config_saved_with_project_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "runs" / "h1_v2" / "A01"
+            checkpoint = run_dir / "checkpoints" / "last.ckpt"
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_bytes(b"checkpoint")
+            saved_config = run_dir / "config_model.yaml"
+            saved_config.write_text("control_model_ratio: 1.0\n", encoding="utf-8")
+
+            self.assertEqual(
+                resolve_run_model_config("configs/model/diffeic.yaml", str(checkpoint)),
+                str(saved_config),
+            )
+
+            saved_config.unlink()
+            self.assertEqual(
+                resolve_run_model_config("configs/model/diffeic.yaml", str(checkpoint)),
+                "configs/model/diffeic.yaml",
+            )
 
 
 if __name__ == "__main__":

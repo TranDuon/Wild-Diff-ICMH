@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Mapping
 
 
@@ -20,6 +21,15 @@ _ENTROPY_PARAMETER_LIST = {
     "factor": "factors",
 }
 PROJECT_CHECKPOINT_CONTRACT_VERSION = 2
+
+
+def resolve_run_model_config(requested_config: str, checkpoint_path: str) -> str:
+    """Prefer the architecture snapshot saved alongside a project checkpoint."""
+    checkpoint = Path(checkpoint_path).expanduser()
+    run_config = checkpoint.parent.parent / "config_model.yaml"
+    if run_config.is_file():
+        return str(run_config)
+    return str(requested_config)
 
 
 def validate_project_resume_checkpoint(checkpoint: Mapping[str, Any]) -> None:

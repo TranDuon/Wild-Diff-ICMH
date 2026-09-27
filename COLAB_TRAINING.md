@@ -181,7 +181,7 @@ Trước hết decode H1 với tag RAM++ đầy đủ đã cache (không có met
 python inference_partition.py \
   --ckpt_sd checkpoints/sd2p1/v2-1_512-ema-pruned.ckpt \
   --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/checkpoints/best.ckpt \
-  --config configs/model/diffeic.yaml \
+  --config /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/config_model.yaml \
   --input /content/data/wild_diff_icmh/images \
   --output /content/results/h1_A01 \
   --manifest data/manifests/kgalagadi_site_split.jsonl \
@@ -196,7 +196,7 @@ Sau đó decode lại đúng checkpoint/ảnh/seed nhưng bật hai tầng H3:
 python inference_partition.py \
   --ckpt_sd checkpoints/sd2p1/v2-1_512-ema-pruned.ckpt \
   --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/checkpoints/best.ckpt \
-  --config configs/model/diffeic.yaml \
+  --config /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/config_model.yaml \
   --input /content/data/wild_diff_icmh/images \
   --output /content/results/h3_A01 \
   --manifest data/manifests/kgalagadi_site_split.jsonl \

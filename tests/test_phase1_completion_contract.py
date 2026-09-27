@@ -18,6 +18,15 @@ def test_inference_migrates_checkpoint_before_validation_and_load():
     assert migration < validation < shape_check < loading
 
 
+def test_inference_resolves_run_architecture_before_model_construction():
+    source = (ROOT / "inference_partition.py").read_text(encoding="utf-8")
+    main = source[source.index("def main()"):]
+    resolution = main.index("resolve_run_model_config(args.config, args.ckpt_lc)")
+    config_load = main.index("OmegaConf.load(resolved_config)")
+    construction = main.index("instantiate_from_config(model_config)")
+    assert resolution < config_load < construction
+
+
 def test_generated_notebook_checks_resume_and_end_to_end_metrics():
     notebook = json.loads(
         (ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb").read_text(encoding="utf-8")
@@ -32,6 +41,8 @@ def test_generated_notebook_checks_resume_and_end_to_end_metrics():
     assert "'--limit', '2'" in code
     assert "'--results-registry', str(RESULTS_REGISTRY)" in code
     assert "END-TO-END THÀNH CÔNG" in code
+    assert "str(RUN_DIR / 'config_model.yaml')" in code
+    assert "run_and_log(decode_command" in code
 
 
 def test_model_marks_every_project_checkpoint_with_current_contract():

@@ -573,7 +573,7 @@ cells = [
             sys.executable, '-u', 'inference_partition.py',
             '--ckpt_sd', str(SD_CKPT),
             '--ckpt_lc', str(PROJECT_CKPT),
-            '--config', 'configs/model/diffeic.yaml',
+            '--config', str(RUN_DIR / 'config_model.yaml'),
             '--input', str(LOCAL_IMAGES),
             '--output', str(SMOKE_DECODE_DIR),
             '--manifest', 'data/manifests/kgalagadi_site_split.jsonl',
@@ -583,8 +583,32 @@ cells = [
             '--device', 'cuda', '--limit', '2',
             'params.c_cfg_scale=3.0',
         ]
+        def run_and_log(command, log_path, label):
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open('a', encoding='utf-8') as log_stream:
+                process = subprocess.Popen(
+                    command,
+                    cwd=REPO,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                assert process.stdout is not None
+                for line in process.stdout:
+                    print(line, end='')
+                    log_stream.write(line)
+                    log_stream.flush()
+                return_code = process.wait()
+            if return_code:
+                raise RuntimeError(
+                    f'{label} dừng với mã {return_code}. Traceback đầy đủ: {log_path}'
+                )
+
+        decode_log_path = DRIVE_ROOT / 'logs' / f"decode_smoke_{SITE.replace(':', '_')}.log"
         print('Decode:', ' '.join(decode_command))
-        subprocess.run(decode_command, cwd=REPO, env=env, check=True)
+        run_and_log(decode_command, decode_log_path, 'Decode smoke test')
 
         decode_hours = (time.monotonic() - decode_started) / 3600
         decode_cu_estimate = decode_hours * COLAB_CU_PER_HOUR
@@ -603,7 +627,8 @@ cells = [
             '--cu-estimate', str(decode_cu_estimate),
         ]
         print('Đánh giá:', ' '.join(evaluate_command))
-        subprocess.run(evaluate_command, cwd=REPO, env=env, check=True)
+        evaluate_log_path = DRIVE_ROOT / 'logs' / f"evaluate_smoke_{SITE.replace(':', '_')}.log"
+        run_and_log(evaluate_command, evaluate_log_path, 'Evaluate smoke test')
         print('END-TO-END THÀNH CÔNG')
         print('Kết quả từng ảnh:', PER_IMAGE_RESULTS)
         print('Registry:', RESULTS_REGISTRY)

@@ -23,6 +23,7 @@ from utils.metrics import compute_psnr, compute_ssim, LPIPS
 from utils.common import instantiate_from_config, load_state_dict
 from utils.checkpoint_contract import (
     migrate_legacy_entropy_bottleneck_checkpoint,
+    resolve_run_model_config,
     state_dict_shape_mismatches,
     validate_entropy_bottleneck_checkpoint,
 )
@@ -94,7 +95,14 @@ def _load_checkpoint(model: DiffEIC, path: str, label: str):
         )
     state_dict = checkpoint.get("state_dict", checkpoint)
     message = load_state_dict(model, state_dict, strict=False)
-    print(f"Loaded {label} checkpoint {path}: {message}")
+    missing = list(getattr(message, "missing_keys", ()))
+    unexpected = list(getattr(message, "unexpected_keys", ()))
+    print(
+        f"Loaded {label} checkpoint {path}: "
+        f"missing={len(missing)}, unexpected={len(unexpected)}"
+    )
+    if unexpected:
+        print(f"  First unexpected keys: {unexpected[:5]}")
     del state_dict, checkpoint
     gc.collect()
 
@@ -330,7 +338,10 @@ def main() -> None:
         disable_xformers()
 
     # model: DiffEIC = instantiate_from_config(OmegaConf.load(args.config))
-    model_config = OmegaConf.load(args.config)
+    resolved_config = resolve_run_model_config(args.config, args.ckpt_lc)
+    if resolved_config != args.config:
+        print(f"Using run-matched model config: {resolved_config}")
+    model_config = OmegaConf.load(resolved_config)
     # --ckpt_sd below supplies these weights. Avoid loading the same 5+ GB
     # checkpoint once in __init__ and a second time in this CLI.
     model_config.params.sync_path = None
