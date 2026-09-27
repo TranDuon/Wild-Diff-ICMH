@@ -40,6 +40,9 @@ cells = [
 
         Trong **cùng một runtime**, nếu một cell đã có dấu tích xanh thì không cần chạy lại,
         trừ khi cell đó vừa báo lỗi.
+
+        **Khi có bản sửa mới trên GitHub:** chỉ chạy cell **Bước 2A**, rồi chạy lại đúng
+        cell vừa lỗi. Không cần copy cell pull tạm và không cần chạy lại các bước đã thành công.
         """
     ),
     markdown("## Bước 1 — Gắn Google Drive (mỗi runtime mới)"),
@@ -70,6 +73,52 @@ cells = [
         os.chdir(REPO)
         subprocess.run(['nvidia-smi'], check=True)
         print('Mã nguồn:', REPO)
+        """
+    ),
+    markdown(
+        """
+        ### Bước 2A — Cập nhật bản sửa mới nhất (chỉ chạy khi được báo đã push)
+
+        Cell cố định này thay cho mọi cell pull tạm. Trong cùng runtime, chạy cell này sau
+        khi có bản sửa trên GitHub, rồi chạy lại **đúng cell vừa lỗi**. Cell tự in commit
+        trước/sau và xác nhận thư mục code đã khớp hoàn toàn với `origin/main`.
+        """
+    ),
+    code(
+        """
+        assert (REPO / '.git').is_dir(), 'Hãy chạy Bước 2 trước để clone repository.'
+
+        local_changes = subprocess.check_output(
+            ['git', 'status', '--porcelain'], cwd=REPO, text=True
+        ).strip()
+        if local_changes:
+            raise RuntimeError(
+                'Thư mục code Colab có sửa cục bộ nên chưa thể pull an toàn:\n'
+                f'{local_changes}\n'
+                'Không sửa file trong /content/Wild-Diff-ICMH; hãy gửi phần này để xử lý.'
+            )
+
+        before = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'], cwd=REPO, text=True
+        ).strip()
+        subprocess.run(
+            ['git', 'pull', '--ff-only', 'origin', BRANCH], cwd=REPO, check=True
+        )
+        after = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'], cwd=REPO, text=True
+        ).strip()
+        remote = subprocess.check_output(
+            ['git', 'rev-parse', '--short', f'origin/{BRANCH}'], cwd=REPO, text=True
+        ).strip()
+
+        print('Commit trước:', before)
+        print('Commit sau:  ', after)
+        print('GitHub main: ', remote)
+        assert after == remote, f'Code local {after} chưa khớp GitHub {remote}'
+        if before == after:
+            print('ĐÃ Ở BẢN MỚI NHẤT — chạy lại đúng cell vừa lỗi.')
+        else:
+            print('CẬP NHẬT THÀNH CÔNG — chạy lại đúng cell vừa lỗi.')
         """
     ),
     markdown(

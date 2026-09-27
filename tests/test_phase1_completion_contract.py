@@ -46,6 +46,24 @@ def test_generated_notebook_checks_resume_and_end_to_end_metrics():
     assert code.count("'--crop-size', '256'") == 2
 
 
+def test_generated_notebook_has_permanent_hotfix_pull_cell():
+    notebook = json.loads(
+        (ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb").read_text(encoding="utf-8")
+    )
+    markdown_text = "\n".join(
+        cell["source"] for cell in notebook["cells"] if cell["cell_type"] == "markdown"
+    )
+    code_text = "\n".join(
+        cell["source"] for cell in notebook["cells"] if cell["cell_type"] == "code"
+    )
+
+    assert "Bước 2A — Cập nhật bản sửa mới nhất" in markdown_text
+    assert "['git', 'pull', '--ff-only', 'origin', BRANCH]" in code_text
+    assert "['git', 'status', '--porcelain']" in code_text
+    assert "assert after == remote" in code_text
+    assert "CẬP NHẬT THÀNH CÔNG" in code_text
+
+
 def test_model_marks_every_project_checkpoint_with_current_contract():
     source = (ROOT / "model" / "diffeic.py").read_text(encoding="utf-8")
     function = source[source.index("    def on_save_checkpoint"):source.index("    def on_load_checkpoint")]
