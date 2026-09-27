@@ -557,7 +557,8 @@ cells = [
         Đây là kiểm tra end-to-end, chưa phải số liệu dùng trong báo cáo. Cell chỉ decode 2 ảnh
         bằng 5 bước DDIM để tiết kiệm CU, sau đó ghi metric tổng hợp vào
         `MyDrive/wild_diff_icmh/results/results.jsonl`. Khi chạy thí nghiệm chính phải bỏ
-        `--limit 2`, dùng 50 DDIM step và đánh giá toàn bộ test split.
+        `--limit 2`, tăng lên 50 DDIM step, giữ center crop 256×256 giống validation
+        và đánh giá toàn bộ test split.
         """
     ),
     code(
@@ -580,7 +581,7 @@ cells = [
             '--tag-cache', str(TAGS_PATH),
             '--split', 'test', '--site-id', SITE,
             '--sampler', 'ddim', '--steps', str(decode_steps),
-            '--device', 'cuda', '--limit', '2',
+            '--device', 'cuda', '--limit', '2', '--crop-size', '256',
             'params.c_cfg_scale=3.0',
         ]
         def run_and_log(command, log_path, label):
@@ -618,7 +619,7 @@ cells = [
             '--data-root', str(LOCAL_IMAGES),
             '--reconstruction-root', str(SMOKE_DECODE_DIR),
             '--split', 'test', '--site-id', SITE,
-            '--method', 'H1', '--limit', '2', '--lpips',
+            '--method', 'H1', '--limit', '2', '--crop-size', '256', '--lpips',
             '--output', str(PER_IMAGE_RESULTS),
             '--results-registry', str(RESULTS_REGISTRY),
             '--exp-id', f'phase1_h1_smoke_{SITE.replace(":", "_")}',

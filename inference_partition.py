@@ -19,6 +19,7 @@ from model.spaced_sampler import SpacedSampler
 from model.ddim_sampler import DDIMSampler
 from model.diffeic import DiffEIC
 from utils.image import pad
+from utils.image_geometry import center_crop_image
 from utils.metrics import compute_psnr, compute_ssim, LPIPS
 from utils.common import instantiate_from_config, load_state_dict
 from utils.checkpoint_contract import (
@@ -305,6 +306,10 @@ def parse_args() -> Namespace:
     
     parser.add_argument("--output", type=str, default='results/')
     parser.add_argument("--limit", type=int, default=None, help="process only the first N selected images")
+    parser.add_argument(
+        "--crop-size", type=int, default=None,
+        help="deterministically center-crop each image before coding (use 256 for the Colab protocol)",
+    )
     
     parser.add_argument("--seed", type=int, default=231)
     parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
@@ -332,6 +337,8 @@ def main() -> None:
     args = parse_args()
     if args.limit is not None and args.limit <= 0:
         raise ValueError('--limit must be positive')
+    if args.crop_size is not None and args.crop_size <= 0:
+        raise ValueError('--crop-size must be positive')
     pl.seed_everything(args.seed)
     
     if args.device == "cpu":
@@ -435,6 +442,13 @@ def main() -> None:
         if not os.path.isfile(file_path):
             raise FileNotFoundError(file_path)
         img = Image.open(file_path).convert("RGB")
+        if args.crop_size is not None:
+            original_size = img.size
+            img = center_crop_image(img, args.crop_size)
+            print(
+                f"Center crop {original_size[0]}x{original_size[1]} -> "
+                f"{img.width}x{img.height}: {os.path.relpath(file_path, args.input)}"
+            )
         x = pad(np.array(img), scale=64)
         
         save_path = os.path.join(args.output, os.path.relpath(file_path, args.input))

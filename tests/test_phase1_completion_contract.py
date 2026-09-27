@@ -43,6 +43,7 @@ def test_generated_notebook_checks_resume_and_end_to_end_metrics():
     assert "END-TO-END THÀNH CÔNG" in code
     assert "str(RUN_DIR / 'config_model.yaml')" in code
     assert "run_and_log(decode_command" in code
+    assert code.count("'--crop-size', '256'") == 2
 
 
 def test_model_marks_every_project_checkpoint_with_current_contract():

@@ -14,6 +14,7 @@ from PIL import Image
 
 from dataset.camera_trap_dataset import _box_xywh, _load_detection_map
 from tools.data.split_check import assert_no_leakage
+from utils.image_geometry import center_crop_boxes, center_crop_image
 from utils.metrics import LPIPS, compute_psnr, compute_ssim, compute_ssim_masked
 from utils.results_registry import metric_rows, upsert_jsonl
 
@@ -50,8 +51,11 @@ def _mask_from_boxes(width, height, boxes):
     return torch.from_numpy(mask).unsqueeze(0).unsqueeze(0)
 
 
-def _tensor(path):
-    array = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255.0
+def _tensor(path, crop_size=None):
+    image = Image.open(path).convert("RGB")
+    if crop_size is not None:
+        image = center_crop_image(image, crop_size)
+    array = np.asarray(image, dtype=np.float32) / 255.0
     return torch.from_numpy(array).permute(2, 0, 1).unsqueeze(0)
 
 
@@ -82,6 +86,10 @@ def main(argv=None):
     parser.add_argument("--method", required=True, help="baseline, H1, H2 or H3")
     parser.add_argument("--dataset", default="snapshot_kgalagadi")
     parser.add_argument("--limit", type=int, default=None, help="evaluate only the first N filtered rows")
+    parser.add_argument(
+        "--crop-size", type=int, default=None,
+        help="apply the same deterministic center crop used during decoding",
+    )
     parser.add_argument("--min-detection-confidence", type=float, default=0.2)
     parser.add_argument("--lpips", action="store_true")
     parser.add_argument("--output", required=True)
@@ -95,6 +103,8 @@ def main(argv=None):
 
     if args.limit is not None and args.limit <= 0:
         parser.error("--limit must be positive")
+    if args.crop_size is not None and args.crop_size <= 0:
+        parser.error("--crop-size must be positive")
 
     assert_no_leakage([Path(args.manifest)], build_info=args.build_info)
     rows = _load_rows(args.manifest, args.split, args.site_id)
@@ -124,11 +134,21 @@ def main(argv=None):
                 f"missing source/reconstruction/bitstream for {row['image_id']}: "
                 f"{source_path}, {reconstructed_path}, {stream_path}"
             )
-        source, reconstruction = _tensor(source_path), _tensor(reconstructed_path)
+        with Image.open(source_path) as source_image:
+            original_width, original_height = source_image.size
+        source = _tensor(source_path, crop_size=args.crop_size)
+        reconstruction = _tensor(reconstructed_path)
         if source.shape != reconstruction.shape:
             raise ValueError(f"shape mismatch for {row['image_id']}: {source.shape} vs {reconstruction.shape}")
         _, _, height, width = source.shape
-        boxes = _boxes_for(row, detections, width, height, args.min_detection_confidence)
+        boxes = _boxes_for(
+            row, detections, original_width, original_height,
+            args.min_detection_confidence,
+        )
+        if args.crop_size is not None:
+            boxes = center_crop_boxes(
+                boxes, original_width, original_height, args.crop_size
+            )
         mask = _mask_from_boxes(width, height, boxes)
         bitstream_bits = stream_path.stat().st_size * 8
         bpp = bitstream_bits / (height * width)
