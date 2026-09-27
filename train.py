@@ -172,6 +172,17 @@ def _resolve_resume(value: Optional[str], root_dir: str) -> Optional[str]:
     return str(path)
 
 
+def _save_final_checkpoint(trainer, root_dir: str) -> str:
+    """Persist full training state even when a short run ends before cadence."""
+    path = Path(root_dir) / "checkpoints" / "last.ckpt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    trainer.save_checkpoint(str(path), weights_only=False)
+    if not path.is_file():
+        raise RuntimeError(f"trainer did not create final checkpoint: {path}")
+    print(f"Saved final full-state checkpoint: {path}", flush=True)
+    return str(path)
+
+
 def main() -> None:
     parser = ArgumentParser()
     parser.add_argument("--config", default="./configs/train_kgalagadi_colab.yaml")
@@ -272,6 +283,7 @@ def main() -> None:
     trainer = pl.Trainer(callbacks=callbacks, **config.lightning.trainer)
     print("[Train 6/6] Starting trainer.fit", flush=True)
     trainer.fit(model, datamodule=data_module, ckpt_path=resume_path)
+    _save_final_checkpoint(trainer, save_dir)
 
 
 if __name__ == "__main__":

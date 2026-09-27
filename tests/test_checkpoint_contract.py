@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import unittest
+import ast
+import tempfile
+from pathlib import Path
 
 from utils.checkpoint_contract import (
     PROJECT_CHECKPOINT_CONTRACT_VERSION,
@@ -119,6 +122,34 @@ class EntropyCheckpointMigrationTests(unittest.TestCase):
                 "wild_diff_checkpoint_contract_version": PROJECT_CHECKPOINT_CONTRACT_VERSION,
                 "global_step": 20,
             })
+
+    def test_short_training_run_saves_final_full_state_checkpoint(self):
+        source = Path("train.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_save_final_checkpoint"
+        )
+        namespace = {"Path": Path}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), "train.py", "exec"), namespace)
+
+        class TrainerStub:
+            def __init__(self):
+                self.weights_only = None
+
+            def save_checkpoint(self, path, weights_only):
+                self.weights_only = weights_only
+                Path(path).write_bytes(b"full-state")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            trainer = TrainerStub()
+            output = namespace["_save_final_checkpoint"](trainer, temporary)
+            self.assertEqual(Path(output).read_bytes(), b"full-state")
+            self.assertFalse(trainer.weights_only)
+
+        fit = source.index("trainer.fit(")
+        final_save = source.index("_save_final_checkpoint(trainer, save_dir)")
+        self.assertLess(fit, final_save)
 
 
 if __name__ == "__main__":
