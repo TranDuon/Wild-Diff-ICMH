@@ -76,7 +76,7 @@ cells = [
         import sys
 
         REPO_URL = 'https://github.com/TranDuon/Wild-Diff-ICMH.git'
-        BRANCH = 'main'
+        BRANCH = 'ver2'  # test branch; set back to 'main' when merging
         REPO = Path('/content/Wild-Diff-ICMH')
 
         if (REPO / '.git').is_dir():
@@ -127,7 +127,7 @@ cells = [
 
         print('Commit trước:', before)
         print('Commit sau:  ', after)
-        print('GitHub main: ', remote)
+        print(f'GitHub {BRANCH}:', remote)
         assert after == remote, f'Code local {after} chưa khớp GitHub {remote}'
         if before == after:
             print('ĐÃ Ở BẢN MỚI NHẤT — chạy lại đúng cell vừa lỗi.')
