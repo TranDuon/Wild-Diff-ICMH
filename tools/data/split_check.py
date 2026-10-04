@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
-# The full manifest row contract (CAMERA_TRAP_FINE_TUNING_PLAN.md item 2, plus
+# The full manifest row contract (data/manifests/README.md, plus
 # provenance/ranking fields needed by the downloader and the split gate).
 REQUIRED_FIELDS = (
     "image_id",

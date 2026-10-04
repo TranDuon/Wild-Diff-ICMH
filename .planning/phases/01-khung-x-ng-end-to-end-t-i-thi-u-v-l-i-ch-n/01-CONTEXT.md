@@ -51,7 +51,6 @@ Phase này đóng gói một lát cắt Colab có thể tái lập từ manifest
 - `.planning/PROJECT.md` — Core Value, ràng buộc compute và các quyết định kiến trúc không được phá.
 - `.planning/REQUIREMENTS.md` — PRE-01..06, DATA-02/03/05, INFRA-03..05 và EVAL-01/08 thuộc Phase 1.
 - `.planning/ROADMAP.md` — goal, ngân sách và success criteria của Phase 1; ranh giới với Phase 2/3.
-- `docs/ke-hoach-difficmh-wildlife-8-tuan.md` — kế hoạch nghiên cứu nguồn, risk register và thứ tự hy sinh phạm vi.
 
 ### Luồng Colab và cấu hình
 - `Wild_Diff_ICMH_Kgalagadi_Train.ipynb` — notebook người dùng trực tiếp chạy.

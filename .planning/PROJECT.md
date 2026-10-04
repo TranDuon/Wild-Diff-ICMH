@@ -54,7 +54,7 @@ Người dùng cuối là các nhà sinh thái học vận hành mạng bẫy �
 
 **Điểm xuất phát khác kế hoạch gốc ở ba chỗ quan trọng:**
 
-1. **`train.py` đã hoạt động.** Kế hoạch 8 tuần trong `docs/ke-hoach-difficmh-wildlife-8-tuan.md` coi "train.py là stub" (rủi ro R1) là **rủi ro lớn nhất, xác suất cao, cổng sinh tử cuối Tuần 2**. Khảo sát repo cho thấy nó là entrypoint Lightning hoàn chỉnh với data module, resume checkpoint, callbacks và gradient accumulation. Rủi ro này coi như đã đóng, giải phóng 1–2 tuần khỏi lịch — chuyển sang phase dữ liệu và eval.
+1. **`train.py` đã hoạt động.** Kế hoạch 8 tuần ban đầu của nhóm (tài liệu ngoài repo, không lưu trong Git) coi "train.py là stub" (rủi ro R1) là **rủi ro lớn nhất, xác suất cao, cổng sinh tử cuối Tuần 2**. Khảo sát repo cho thấy nó là entrypoint Lightning hoàn chỉnh với data module, resume checkpoint, callbacks và gradient accumulation. Rủi ro này coi như đã đóng, giải phóng 1–2 tuần khỏi lịch — chuyển sang phase dữ liệu và eval.
 
 2. **Nút thắt đã đổi từ người-giờ sang compute.** Kế hoạch gốc giả định 1 GPU 24GB chạy liên tục 8 tuần = 1.344 giờ khả dụng, cần ~290h (hệ số an toàn 4,6×). Thực tế là **Colab Pro ~100 compute units/tháng**, tương đương ~20h L4 hoặc ~7,5h A100 mỗi tháng → **~50h L4 cho cả dự án**. Ngân sách thật nhỏ hơn giả định của kế hoạch **khoảng 5–6 lần**. Đây là ràng buộc định hình mọi quyết định về iterations, crop size, kích thước tập eval, và số DDIM steps.
 
@@ -70,7 +70,7 @@ Người dùng cuối là các nhà sinh thái học vận hành mạng bẫy �
 
 **Hai chi tiết kỹ thuật quyết định thiết kế:** (i) `L_dist` tính trên latent VAE (downsample 8×) còn `L_sem` tính ở SD UNet middle block (downsample 64×) — nên ROI weighting có ý nghĩa trên `L_dist` nhưng gần như vô nghĩa trên `L_sem` ở middle block; (ii) SC loss gốc đã là tổng theo vị trí không gian `n`, nên thêm ROI weighting chỉ là thay `1/N` bằng `w_n / Σw_n` — sửa đổi 1 dòng, không tốn VRAM, không thêm tham số.
 
-**Nguồn tham chiếu chính:** `docs/ke-hoach-difficmh-wildlife-8-tuan.md` (kế hoạch nghiên cứu chi tiết: 25 task, ma trận RACI, sổ rủi ro R0–R12, thứ tự hy sinh khi chậm tiến độ), `docs/NeurIPS-2025-diff-icmh-*.pdf` (paper gốc), `docs/Diff_ICMH__NeurIPS_2025___Camera_Ready_Appendix.pdf` (appendix camera-ready).
+**Nguồn tham chiếu chính:** khung GSD trong `.planning/` là kế hoạch duy nhất; `docs/NeurIPS-2025-diff-icmh-*.pdf` (paper gốc), `docs/Diff_ICMH__NeurIPS_2025___Camera_Ready_Appendix.pdf` (appendix camera-ready), `tmp/pdfs/xie2025_saliency_camera_traps.pdf` (bài so sánh trên Snapshot Kgalagadi). Các file trong `.planning/research/` còn nhắc `docs/ke-hoach-difficmh-wildlife-8-tuan.md` — đó là kế hoạch 8 tuần ban đầu, không có trong repo, chỉ còn giá trị lịch sử.
 
 ## Constraints
 
@@ -88,11 +88,13 @@ Người dùng cuối là các nhà sinh thái học vận hành mạng bẫy �
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Phạm vi H1 + H2 + H3, cắt H4 | H4 mâu thuẫn luận điểm task-agnostic của paper gốc và cần ≥60h GPU mà ngân sách Colab không có | — Pending |
-| Thu thập 60K ảnh làm corpus nhưng **train trên subset lấy mẫu** | Corpus lớn cho thống kê miền và split theo site đáng tin cậy; ngân sách compute không cho phép duyệt hết 60K trong một run | — Pending |
+| ~~Thu thập 60K ảnh làm corpus nhưng train trên subset lấy mẫu~~ → thay ngày 24/09 bằng **toàn bộ 10.222 ảnh Snapshot Kgalagadi**, split 70/15/15 theo sequence trong từng site | Cùng bộ dữ liệu với bài so sánh duy nhất tìm được trên miền này (Xie 2025) | — Pending |
+| **H1 chính là một model chung cho 20 site** (04/10, thay model riêng từng site) | Rẻ hơn ~20 lần; đánh giá được trên tập test của bài so sánh bất kỳ | — Pending |
+| **Đánh giá độc lập với bài so sánh** (04/10): giải mã một lần, lưu bitstream + ảnh tái tạo gốc, đa chỉ số, baseline phổ quát; bài so sánh chốt trước Phase 6 | Bài so sánh chưa chốt; tránh phải train/giải mã lại khi thầy chọn bài | — Pending |
 | Fine-tune từ checkpoint tác giả, không retrain | Paper dùng 4× A100 × 400K iters; đồng thời cô lập đúng biến số cần đo (hiệu ứng chuyên biệt hoá) thay vì trộn với biến động pretrain | — Pending |
 | ROI-weight `L_sem` ở **Encoder Layer 9** (32×) thay vì Middle Block (64×) | Ở Middle Block một con linh dương chiếm <1 ô — ROI weighting vô nghĩa. Enc Layer 9 là lựa chọn tốt thứ hai trong ablation Fig 8(b) của paper | — Pending |
 | Crop training có định hướng theo bbox (tỉ lệ ghi trong config) | Động vật chiếm <8% diện tích; crop ngẫu nhiên khiến model dành gần hết ngân sách học cho việc nén cỏ và lá | — Pending |
-| Protocol eval: resize toàn khung 1024×768, không center-crop 768² | Center-crop ảnh bẫy ảnh sẽ loại bỏ động vật ở rìa khung | — Pending |
+| Protocol eval: toàn khung, không center-crop. Cụ thể hoá 04/10: đo end-to-end ở độ phân giải gốc 2592×2000, độ phân giải xử lý mặc định cạnh dài 1024 (EVAL-11) | Center-crop ảnh bẫy ảnh sẽ loại bỏ động vật ở rìa khung; crop 256 hiện có chỉ là biện pháp tạm cho smoke test | — Pending |
 | Baseline so sánh là Diff-ICMH gốc, không phải VTM | Generative codec vốn thua VTM ở PSNR; so với chính nó trên miền hẹp mới là so sánh đúng và đủ | — Pending |
 | Mọi kết quả báo cáo **tách ngày RGB / đêm IR** | Gộp hai chế độ ảnh khác nhau về bản chất sẽ che giấu chính hiệu ứng mà đề tài muốn đo | — Pending |
 | `results.jsonl` là nguồn chân lý duy nhất, mọi figure sinh tự động | Chống hardcode số liệu và chống sai lệch giữa bảng trong báo cáo và biểu đồ | — Pending |

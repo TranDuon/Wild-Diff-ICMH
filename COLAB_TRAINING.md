@@ -1,250 +1,121 @@
-# Fine-tune Kgalagadi trên Google Colab
+# Lưu ý vận hành Colab
 
-Notebook sẵn dùng: `Wild_Diff_ICMH_Kgalagadi_Train.ipynb`.
+Notebook: `Wild_Diff_ICMH_Kgalagadi_Train.ipynb` (sinh từ `tools/build_colab_training_notebook.py`;
+muốn sửa cell thì sửa file sinh rồi chạy lại nó, không sửa tay notebook).
 
-## Protocol đã khóa
+File này **chỉ chứa lưu ý vận hành**. Giao thức thí nghiệm, phạm vi, ngân sách và tiêu chí
+nghiệm thu nằm duy nhất trong khung GSD: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
+`.planning/ROADMAP.md`, `.planning/STATE.md`.
 
-- Dataset chính: toàn bộ 10.222 ảnh Snapshot Kgalagadi không có người.
-- Chia 70/15/15 theo sequence bên trong từng địa điểm; không tách các frame
-  cùng một lần kích hoạt camera sang nhiều tập.
-- Fine-tune một model riêng cho mỗi trong 20 địa điểm.
-- Chọn checkpoint/siêu tham số bằng validation Kgalagadi; chỉ mở test để báo
-  cáo cuối. Serengeti chỉ là đánh giá bổ sung.
-- Thứ tự thí nghiệm: baseline checkpoint tác giả → H1 fine-tune thuần → H2
-  từ chính checkpoint H1. H3 chỉ đổi tag/metadata lúc encode-decode trên cùng
-  checkpoint H1 hoặc H2, không chạy thêm training.
+## Đồng bộ code
 
-## Đồng bộ code hiệu quả
-
-Không tải ZIP code lên lại mỗi lần. Ở máy local:
-
-```bash
-git add <các-file-muốn-lưu>
-git commit -m "mô tả thay đổi"
-git push origin main
-```
-
-Trong Colab chỉ cần chạy cell clone/pull. Dữ liệu và checkpoint nằm ở Drive,
-code nằm ở `/content` để đọc nhanh. Không commit dữ liệu hay checkpoint vào Git.
+- Sửa code ở máy local → `git commit` → `git push origin main`. Không tải ZIP code lên Colab.
+- Trong runtime đang chạy, khi có bản sửa mới: chạy **Bước 2A** rồi chạy lại đúng cell vừa lỗi.
+  Bước 2A từ chối pull nếu thư mục `/content/Wild-Diff-ICMH` có sửa cục bộ — không sửa file
+  trong đó.
+- Sửa nội dung một cell ngay trên trình duyệt (ví dụ đổi tên run dir) không ảnh hưởng repo,
+  nhưng sẽ mất khi mở lại notebook từ GitHub.
+- Không commit dữ liệu, checkpoint, log hay kết quả vào Git.
 
 ## Cấu trúc Drive
 
 ```text
 MyDrive/wild_diff_icmh/
-  images/snapshot_kgalagadi/KGA_S1/...
+  images/snapshot_kgalagadi/...        # ảnh gốc, chép sang /content/data mỗi runtime
   checkpoints/
     sd2p1/v2-1_512-ema-pruned.ckpt
     ram/ram_plus_swin_large_14m.pth
-    difficmh_models/.../model.ckpt
+    difficmh_models/CNscale1.0_1_1_<BPP_WEIGHT>_2_.../model.ckpt
+  tags/KGA_<site>.jsonl                # cache RAM++ (Bước 6), resumable
   detections/kgalagadi_megadetector.json
   runs/
-    h1/A01/checkpoints/last.ckpt
-    h1/A01/checkpoints/best.ckpt
-    h1_control/A01/checkpoints/best.ckpt
-    h2/A01/checkpoints/last.ckpt
+    h1_v2/<site>/{config.yaml, config_model.yaml, checkpoints/last.ckpt, best.ckpt}
+    h1_control/<site>/...
+    h2/<site>/...
+  logs/                                # log đầy đủ của mọi subprocess
+  results/results.jsonl                # registry kết quả duy nhất
 ```
 
-Mỗi đầu session, copy ảnh cần dùng từ Drive sang SSD `/content/data`. Checkpoint
-được lưu thẳng về Drive để mất runtime vẫn resume được.
+- `/content` bị xoá khi runtime ngắt; Drive thì không. Ảnh được chép sang SSD `/content/data`
+  vì đọc hàng nghìn file nhỏ trực tiếp từ Drive rất chậm.
+- **Không dùng `runs/h1/`**: checkpoint ở đó tạo trước bản vá entropy-bottleneck (commit
+  a385eee), entropy model khởi tạo ngẫu nhiên. Resume sẽ bị chặn vì thiếu contract version.
 
-## Cài đặt không phá Torch của Colab
+## Cài đặt (Bước 3)
 
-```bash
-pip install -q -r requirements-colab.txt
-pip install -q --no-deps --no-build-isolation compressai==1.2.8
-pip install -q --no-deps --force-reinstall src/recognize-anything
-```
+- Không cài lại `torch`, `torchvision` hay xFormers. Attention dùng `scaled_dot_product_attention`
+  của PyTorch 2 nên không cần xFormers.
+- Bước 3 bỏ pin NumPy/SciPy, ghim phiên bản NumPy/SciPy/Torch/Torchvision hiện có bằng
+  constraints và dừng nếu chúng bị đổi sau khi cài.
+- CompressAI cài bằng `--no-deps --no-build-isolation`; vì vậy `requirements-colab.txt` phải
+  liệt kê đủ phụ thuộc không-phải-Torch của nó (`pytorch-msssim`, `torch-geometric`, ...).
+  Trên Python 3.13 CompressAI được build từ source.
+- RAM++ (`src/recognize-anything`) cài dạng package thường, không editable, để kernel đang chạy
+  thấy ngay. **Sửa code trong `src/recognize-anything` thì phải chạy lại Bước 3.**
+- Giữ `transformers<5` (BERT của RAM++ dùng API 4.x).
 
-`requirements-colab.txt` phải chứa đủ dependency runtime/build không phải Torch của
-CompressAI (bao gồm `pytorch-msssim` và `torch-geometric`), vì lệnh cài CompressAI
-cố ý dùng `--no-deps`. Notebook sinh file requirements tạm bỏ pin NumPy/SciPy để
-giữ binary stack có sẵn của Colab, đặc biệt trên Python 3.13/NumPy 2.
-Cell cũng ghim các phiên bản NumPy/SciPy/Torch/Torchvision hiện có bằng constraints,
-kiểm tra chúng không đổi sau cài đặt, rồi smoke-import các module chính của CompressAI.
-Recognize Anything được cài thành package thường thay vì editable package: kernel
-Jupyter đang chạy nhìn thấy `ram` ngay sau pip mà không cần restart để đọc lại `.pth`.
+## RAM++ tags (Bước 6)
 
-Không cài lại `torch`, `torchvision` hoặc xFormers bằng một wheel tùy ý. Code
-đã dùng `scaled_dot_product_attention` có sẵn trong PyTorch 2 nên xFormers
-không còn là điều kiện bắt buộc.
+- Tag được tính một lần rồi cache trên Drive; training đọc cache thay vì giữ RAM++ (~3 GB) trên GPU.
+- Cell tự bỏ qua nếu đủ tag, hoặc tiếp tục phần còn thiếu; dòng JSONL bị cắt cụt do runtime chết
+  được tự sửa.
 
-## Chạy một địa điểm trước
+## Training, checkpoint và resume (Bước 7–8)
 
-RAM++ được chạy một lần trước training rồi cache tag. Việc này giữ nguyên text
-conditioning của checkpoint tác giả nhưng giải phóng khoảng 3 GB VRAM khi
-fine-tune:
-
-```bash
-python tools/precompute_ram_tags.py \
-  --data-root /content/data/wild_diff_icmh/images \
-  --checkpoint /content/drive/MyDrive/wild_diff_icmh/checkpoints/ram/ram_plus_swin_large_14m.pth \
-  --site-id KGA:A01 \
-  --output /content/drive/MyDrive/wild_diff_icmh/tags/KGA_A01.jsonl
-```
-
-Sau đó chạy smoke test 20 step trên `KGA:A01`:
-
-> Dùng `h1_v2` làm run root mới. Checkpoint trong `runs/h1/` được tạo trước
-> bản vá entropy checkpoint nên chỉ giữ để đối chiếu log, không được resume cho
-> thí nghiệm chính.
-
-```bash
-export WILD_DATA_ROOT=/content/data/wild_diff_icmh/images
-export KGA_SITE_ID=KGA:A01
-export KGA_TAGS=/content/drive/MyDrive/wild_diff_icmh/tags/KGA_A01.jsonl
-export BPP_WEIGHT=2
-export WILD_RUN_DIR=/content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01
-
-python train.py --config configs/train_kgalagadi_colab.yaml \
-  --init-checkpoint /content/drive/MyDrive/wild_diff_icmh/checkpoints/difficmh_models/CNscale1.0_1_1_2_2_WTagGCM_bs16x1_lr0.00005_cfg7.0/model.ckpt \
-  lightning.trainer.max_steps=20 \
-  lightning.trainer.val_check_interval=10 \
-  lightning.trainer.check_val_every_n_epoch=1 \
-  lightning.trainer.limit_val_batches=2
-```
-
-Nếu runtime ngắt, chạy lại đúng lệnh. `resume_checkpoint: auto` sẽ nạp
-`last.ckpt`, bao gồm model, optimizer và global step. Khi đã đo được thời gian
-và VRAM, bỏ bốn override smoke-test; không nên chạy cả 20 site trước phép đo này.
-
-Notebook hiện kiểm tra ngay sau smoke test rằng checkpoint có `global_step >= 20`
-và có `optimizer_states`. Bước 8 đặt `max_steps` thành step hiện tại cộng 1; chỉ
-khi checkpoint mới tăng step và vẫn giữ optimizer state mới in
-`RESUME THÀNH CÔNG`. Đây là cổng bắt buộc trước khi chạy thí nghiệm dài.
-
-Checkpoint tác giả dùng tên tham số entropy model của CompressAI cũ
-(`_matrixN`, `_biasN`, `_factorN`). Loader của dự án tự chuyển sang tên hiện tại
-(`matrices.N`, `biases.N`, `factors.N`) trước khi kiểm tra shape/nạp trọng số và
-sẽ dừng nếu thiếu khóa hoặc gặp xung đột. Không được bỏ cảnh báo này bằng
-`strict=False`, vì như vậy entropy model có thể bị khởi tạo ngẫu nhiên.
-
-Để chạy tuần tự một số site trong một session:
-
-```bash
-python tools/train_kgalagadi_sites.py \
-  --config configs/train_kgalagadi_colab.yaml \
-  --run-root /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2 \
-  --init-checkpoint /content/drive/MyDrive/wild_diff_icmh/checkpoints/difficmh_models/CNscale1.0_1_1_2_2_WTagGCM_bs16x1_lr0.00005_cfg7.0/model.ckpt \
-  --max-sites 1
-```
-
-`--max-sites 1` là van an toàn. Chỉ tăng sau khi biết một site tốn bao nhiêu
-phút và compute unit. Lần chạy sau tự bỏ qua site đã có `best.ckpt`, nên
-`--max-sites 1` sẽ chuyển sang site chưa hoàn thành tiếp theo.
-
-`BPP_WEIGHT` phải luôn trùng checkpoint tác giả đã chọn. Làm pilot với 2 trước;
-để dựng RD curve tối thiểu lặp protocol cho 2, 8 và 32. Chỉ mở rộng 4 và 16 sau
-khi dự báo tổng compute vẫn nằm trong ngân sách.
+- `--init-checkpoint` = chỉ nạp trọng số tác giả (step về 0). `--resume` / `resume_checkpoint: auto`
+  = khôi phục toàn trạng thái từ checkpoint của dự án. Có checkpoint resume thì init bị bỏ qua.
+- `BPP_WEIGHT` phải trùng thư mục checkpoint tác giả đã chọn (`CNscale1.0_1_1_<BPP_WEIGHT>_2_...`),
+  và config phải có `control_model_ratio: 1.0` (CNscale1.0). `train.py` chặn nếu lệch.
+- Checkpoint tác giả dùng tên tham số entropy model của CompressAI cũ (`_matrixN`, `_biasN`,
+  `_factorN`); loader tự đổi sang `matrices.N`, `biases.N`, `factors.N` và dừng nếu thiếu khóa
+  hoặc xung đột. Log phải có `Migrated 14 legacy CompressAI entropy-bottleneck keys`.
+  **Không được "sửa" bằng `strict=False`.**
+- Nhịp checkpoint: rolling mỗi 50 optimizer step + `last.ckpt` cuối mỗi lượt `trainer.fit`
+  (ghi `.part`, kiểm tra, rồi mới thay). Khi resume, checkpoint được chép về đĩa local trước khi
+  nạp; file hỏng bị bỏ qua và dùng file hợp lệ cũ hơn.
+- **Chạy lại Bước 7 vào run dir đã có checkpoint ≥ `max_steps`** thì Lightning dừng ngay, không
+  train gì. Muốn đo lại thì dùng run dir mới.
+- Bước 8 resume đúng checkpoint của Bước 7 (`--resume PROJECT_CKPT`) và yêu cầu step tăng.
+  Nếu báo checkpoint hỏng: chạy lại Bước 7 một lần rồi mới chạy Bước 8.
+- `tools/train_kgalagadi_sites.py --max-sites N` chạy tuần tự nhiều site và bỏ qua site đã có
+  `best.ckpt`; giữ `--max-sites 1` cho tới khi biết một site tốn bao nhiêu CU.
 
 ## H2 và H3
 
-H2 cần MegaDetector JSON/JSONL theo format chuẩn (`images[].file` và
-`images[].detections`). File phải có một record cho mọi ảnh của site, kể cả
-record có `detections: []`; preflight sẽ chặn nếu thiếu. Không có file này thì
-không được giả lập ROI:
+- H2 cần file MegaDetector JSON/JSONL (`images[].file`, `images[].detections`) có **một record
+  cho mọi ảnh của site**, kể cả `detections: []`; preflight chặn nếu thiếu. Không giả lập ROI.
+- H2 và H1-control khởi động từ checkpoint H1 qua
+  `--init-checkpoint-template '.../runs/h1_v2/{site}/checkpoints/best.ckpt'`.
+- H3 không train. Decode cùng checkpoint/ảnh/seed hai lần: không có và có
+  `--tag-vocabulary data/vocab/kgalagadi_wildlife_tags.txt --domain-metadata`.
+- `--habitat-map` chỉ dùng với bảng site → habitat đã kiểm chứng (JSON `{"KGA:A01": "..."}`);
+  không tự đoán habitat. Bitstream H3 không có version marker — decode phải dùng đúng cờ
+  tag/metadata như lúc encode.
 
-```bash
-export KGA_DETECTIONS=/content/drive/MyDrive/wild_diff_icmh/detections/kgalagadi_megadetector.json
-python tools/train_kgalagadi_sites.py \
-  --config configs/train_kgalagadi_h2.yaml \
-  --run-root /content/drive/MyDrive/wild_diff_icmh/runs/h2 \
-  --init-checkpoint-template '/content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/{site}/checkpoints/best.ckpt' \
-  --max-sites 1
-```
+## Decode và đánh giá (Bước 9)
 
-Để kết luận H2 có tác dụng, phải chạy thêm đối chứng `h1_control` từ đúng
-checkpoint H1, cũng 2 epoch nhưng giữ loss đều. So sánh H2 với đối chứng này,
-không chỉ so với H1 trước khi train thêm:
+- `inference_partition.py`: truyền `--config <run>/config_model.yaml` (tự chọn nếu file nằm
+  cạnh checkpoint) để dựng đúng kiến trúc lúc train.
+- **Khi có `--manifest` mà không có `--crop-size`, decode và evaluate tự cắt ô 256×256 ở giữa
+  ảnh** (để tránh hết VRAM: ảnh 2592×2000 cần ~26 GiB cho attention của VAE). Số liệu khi đó chỉ
+  đại diện ~1,3% diện tích ảnh. Số báo cáo phải theo giao thức end-to-end ở độ phân giải gốc
+  (REQUIREMENTS EVAL-11), sẽ được thêm vào code ở Phase 2.
+- `tools/evaluate_kgalagadi.py` phải dùng cùng `--crop-size` với lúc decode; tính bpp từ kích
+  thước file bitstream thật; `--results-registry` ghi/thay dòng cùng `exp_id` (idempotent).
+- Bước 9 chỉ decode 2 ảnh với 5 bước DDIM: là kiểm tra end-to-end, **không phải số báo cáo**.
 
-```bash
-python tools/train_kgalagadi_sites.py \
-  --config configs/train_kgalagadi_h1_control.yaml \
-  --run-root /content/drive/MyDrive/wild_diff_icmh/runs/h1_control \
-  --init-checkpoint-template '/content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/{site}/checkpoints/best.ckpt' \
-  --max-sites 1
-```
+## Đóng Phase 1 (Bước 10)
 
-H2 mặc định chỉ weight `L_dist` (V1) để tiết kiệm compute. Chỉ thử V2 weight
-thêm `L_sem` tại encoder layer 9 nếu V1 đã có tín hiệu; V2 cần hai lượt trích
-feature UNet nên đắt hơn rõ rệt.
+- Bước 10 dùng biến trong bộ nhớ của Bước 7–9 (`smoke_hours`, `PROJECT_CKPT`, `resumed_step`,
+  `decode_cu_estimate`, ...). **Runtime mới thì phải chạy lại Bước 1–9 trước**, không chạy riêng
+  Bước 10 được.
+- Dự báo chi phí 2K step trong closeout lấy tổng thời gian Bước 7 chia 20 step, gồm cả thời gian
+  dựng model và validation — con số bị phóng đại. Tốc độ ổn định xem ở `it/s` trong
+  `logs/train_smoke_*.log` (1 optimizer step = 8 batch).
 
-H3 dùng chính checkpoint H1/H2, không fine-tune thêm. Nó thu vocabulary RAM++
-còn 37 tag (6 bit/tag), nối metadata ngày/đêm và mùa từ manifest, rồi truyền
-một byte metadata/ảnh. Site được biết từ chính model per-site đang giải mã nên
-không tốn thêm bit. Nếu có bảng habitat đã kiểm chứng, truyền thêm
-`--habitat-map /đường/dẫn/site_habitat.json` (JSON dạng `{"KGA:A01": "..."}`);
-không được tự đoán habitat. Toàn bộ header, tag và metadata đều được tính vào BPP:
+## Compute unit
 
-Trước hết decode H1 với tag RAM++ đầy đủ đã cache (không có metadata H3):
-
-```bash
-python inference_partition.py \
-  --ckpt_sd checkpoints/sd2p1/v2-1_512-ema-pruned.ckpt \
-  --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/checkpoints/best.ckpt \
-  --config /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/config_model.yaml \
-  --input /content/data/wild_diff_icmh/images \
-  --output /content/results/h1_A01 \
-  --manifest data/manifests/kgalagadi_site_split.jsonl \
-  --tag-cache "$KGA_TAGS" \
-  --split test --site-id KGA:A01 --steps 50 --device cuda \
-  params.c_cfg_scale=3.0
-```
-
-Sau đó decode lại đúng checkpoint/ảnh/seed nhưng bật hai tầng H3:
-
-```bash
-python inference_partition.py \
-  --ckpt_sd checkpoints/sd2p1/v2-1_512-ema-pruned.ckpt \
-  --ckpt_lc /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/checkpoints/best.ckpt \
-  --config /content/drive/MyDrive/wild_diff_icmh/runs/h1_v2/A01/config_model.yaml \
-  --input /content/data/wild_diff_icmh/images \
-  --output /content/results/h3_A01 \
-  --manifest data/manifests/kgalagadi_site_split.jsonl \
-  --tag-cache "$KGA_TAGS" \
-  --tag-vocabulary data/vocab/kgalagadi_wildlife_tags.txt \
-  --domain-metadata \
-  --split test --site-id KGA:A01 --steps 50 --device cuda \
-  params.c_cfg_scale=3.0
-```
-
-## Đánh giá đúng với bài so sánh
-
-Sau khi decode test, dùng bitstream thật và kích thước ảnh trước padding:
-
-```bash
-python tools/evaluate_kgalagadi.py \
-  --manifest data/manifests/kgalagadi_site_split.jsonl \
-  --data-root /content/data/wild_diff_icmh/images \
-  --reconstruction-root /content/results/h1_A01 \
-  --detections "$KGA_DETECTIONS" \
-  --site-id KGA:A01 \
-  --method H1 \
-  --output /content/drive/MyDrive/wild_diff_icmh/results/h1_A01.jsonl \
-  --results-registry /content/drive/MyDrive/wild_diff_icmh/results/results.jsonl \
-  --exp-id h1_A01_bpp2 \
-  --lambda-rate 2 \
-  --ddim-steps 50 \
-  --cu-estimate 0.0
-```
-
-Kết quả gồm BPP, tỉ lệ nén RGB 24-bit, PSNR, SSIM và foreground SSIM. Muốn có
-đường RD như bài so sánh phải lặp cùng protocol cho nhiều checkpoint BPP_WEIGHT
-(2, 4, 8, 16, 32); không kết luận hơn/kém từ một điểm duy nhất.
-
-`--cu-estimate 0.0` trong ví dụ phải được thay bằng số CU ước lượng của lượt
-decode/evaluate thực tế. Bước 9 trong notebook tự đo thời gian, nhân với tốc độ
-CU/giờ đã khai báo và ghi registry. Bước 9 chỉ dùng 2 ảnh và 5 DDIM step nên chỉ
-là kiểm tra end-to-end; số liệu báo cáo phải bỏ `--limit`, dùng 50 step và toàn
-bộ test split.
-
-## Quy tắc tiết kiệm tài nguyên
-
-- Dùng L4 mặc định, crop 256, batch 1 và gradient accumulation 8.
-- H1 mặc định 5 epoch/site; H2 và H1-control cùng 2 epoch/site. Đây là ngân
-  sách khởi đầu, chỉ tăng nếu learning curve và compute unit của pilot cho phép.
-- Validation chỉ 4 batch, sample 20 bước mỗi 2 epoch; checkpoint mỗi 50
-  optimizer step và luôn lưu `last.ckpt`.
-- Checkpoint dự án chỉ lưu phần trainable/control/codec; SD, VAE và RAM++ đóng
-  băng không bị nhân bản vào mỗi file.
-- Nếu phải dùng T4, override `lightning.trainer.precision=16-mixed`.
-- Chỉ dùng A100 cho run cuối khi phép đo cho thấy tốc độ bù được compute unit.
+- Hằng số `COLAB_CU_PER_HOUR = 1.54` trong notebook chỉ để ước lượng. CU thật = chênh lệch
+  "Available" trong Colab Resources trước và sau phiên; ghi lại mỗi phiên.
+- Runtime GPU tốn CU cả khi đang cài đặt hoặc chép ảnh; ngắt runtime ngay khi xong việc.
+- Chọn L4 thủ công (quyết định D-04); notebook không có nhánh riêng cho T4/A100.

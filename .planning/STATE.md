@@ -32,7 +32,7 @@ Plan: 2/2 complete
 Status: Awaiting Bước 10 on the existing successful Colab runtime
 Last activity: 2026-09-16 - Completed quick task 260916-sxk: Bước 1 fine-tune camera trap (manifest dữ liệu + downloader + split_check)
 
-Kế hoạch triển khai liên phase: `CAMERA_TRAP_FINE_TUNING_PLAN.md` (16/09/2026). Đây là kế hoạch thực hiện, chưa phải bằng chứng Phase 1 đã hoàn tất.
+Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -67,6 +67,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Roadmap]: H3 (Phase 5) lên lịch chạy **song song** với H1/H2 (Phase 3/4) vì tầng L1/L2 không cần training — đòn bẩy ngân sách lớn nhất dự án.
 - [Roadmap]: Thứ tự hy sinh pre-committed — cắt điểm bitrate thừa trước, ablation cell sau, phân tích tuỳ chọn cuối cùng; không bao giờ cắt baseline, gate split_check.py, bảng ablation, bảng cái giá chuyên biệt hoá, hay Limitations.
 - [2026-09-24]: Protocol chính = toàn bộ 10.222 ảnh Snapshot Kgalagadi không có người, chia 70/15/15 theo sequence trong từng site và fine-tune một model/site giống bài so sánh. Bài không công bố split nên đây là protocol tái lập của dự án. Snapshot Serengeti chỉ đánh giá bổ sung; fine-tune trên Colab L4.
+- [2026-10-04]: Chỉ dùng một kế hoạch là khung GSD; xoá `CAMERA_TRAP_FINE_TUNING_PLAN.md`; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
+- [2026-10-04]: Bài so sánh ngoài chưa chốt ⇒ đánh giá độc lập với bài so sánh (ROADMAP G-1..G-5): H1 chính là một model chung cho 20 site (thay cho model riêng từng site của quyết định 24/09); đo end-to-end ở độ phân giải gốc với độ phân giải xử lý mặc định cạnh dài 1024; λ = 2/8/32 + núm giải mã; tập dev từ validation, test chạy một lần; lưu toàn bộ bitstream + ảnh tái tạo; đa chỉ số; baseline phổ quát. Requirement mới: EVAL-11..16, H1-05, H1-06, ANLS-09.
+- [2026-10-04]: Thêm hai cải tiến chỉ ở encode/decode, không train: ép xám ảnh đêm khi giải mã (H3-09) và chọn bitrate theo nội dung bằng MegaDetector ở encoder (H3-10), gộp thành cấu hình B5. Ảnh nền tham chiếu theo site (V2-09) và fine-tune riêng từng site lớn (V2-10) đưa vào v2. Tổng 70 requirement v1.
 - [Roadmap]: Sửa số liệu Coverage trong REQUIREMENTS.md — file có 59 requirement v1 có ID cụ thể, không phải 52 như dòng tổng ghi lúc định nghĩa requirements.
 
 ### Pending Todos

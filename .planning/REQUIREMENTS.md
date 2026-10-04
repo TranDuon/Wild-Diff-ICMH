@@ -13,13 +13,13 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **PRE-02**: `train.py` chạy được trên Lightning 2.x — xoá import `LightningCLI` chết, đổi `accelerator: ddp` thành `accelerator: gpu, devices: 1` trong `configs/train_diffeic.yaml`
 - [ ] **PRE-03**: Training resume được **đầy đủ trạng thái** qua `trainer.fit(ckpt_path=...)` — giữ nguyên optimizer state, vị trí LR schedule và `global_step` sau khi Colab ngắt session (thay cho đường `load_state_dict` weights-only hiện tại ở `train.py:73-88`)
 - [ ] **PRE-04**: Checkpoint chỉ lưu trọng số trainable — override `on_save_checkpoint`/`on_load_checkpoint` trong `DiffEIC` để loại SD 2.1 UNet, VAE và RAM++ đóng băng khỏi file checkpoint
-- [ ] **PRE-05**: Tần suất checkpoint phù hợp session Colab — `every_n_train_steps` giảm về 500–1000, `save_top_k` giới hạn để không phình đĩa
+- [ ] **PRE-05**: Tần suất checkpoint phù hợp session Colab — chọn theo thời gian thực đo của một step (hiện: rolling mỗi 50 optimizer step + `last.ckpt` cuối mỗi `trainer.fit`), chỉ giữ `last.ckpt` + `best.ckpt` để không phình đĩa
 - [ ] **PRE-06**: Kill-and-resume test vượt qua — giết tiến trình training giữa chừng, resume, và xác nhận `global_step` cùng optimizer state tiếp tục đúng chỗ (không phải warm-start từ 0)
 
 ### Data — Nền tảng dữ liệu bẫy ảnh
 
 - [ ] **DATA-01**: Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có nhãn người được tải và chuẩn hoá; Snapshot Serengeti chỉ dùng đánh giá bổ sung
-- [ ] **DATA-02**: Mỗi site Kgalagadi được chia train/val/test 70/15/15 theo **sequence/burst**, không phải theo ảnh; một model được fine-tune riêng cho từng site giống bài so sánh
+- [ ] **DATA-02**: Mỗi site Kgalagadi được chia train/val/test 70/15/15 theo **sequence/burst**, không phải theo ảnh. Split đã đóng băng (`kgalagadi_site_split.jsonl` + SHA-256) và không đổi trong suốt dự án. (Từ 04/10: H1 chính là một model chung cho mọi site — xem H1-05; model riêng từng site chỉ là mở rộng tuỳ chọn)
 - [ ] **DATA-03**: `split_check.py` assert không có sequence/burst nào xuất hiện ở hai split và **chạy tự động trước mọi job training/eval** đọc file split (site được phép xuất hiện ở cả ba split theo protocol per-site)
 - [ ] **DATA-04**: Thống kê miền đo được trên chính corpus của nhóm — tỉ lệ ảnh rỗng, tỉ lệ ngày RGB vs đêm IR, phân bố diện tích bbox so với khung hình
 - [ ] **DATA-05**: Xác minh metadata `datetime` và `location` còn dùng được — kiểm tra EXIF trên 100 ảnh đầu, fallback sang trường JSON của LILA nếu EXIF bị strip
@@ -28,7 +28,7 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 
 ### Infra — Hạ tầng training và quản lý ngân sách compute
 
-- [ ] **INFRA-01**: `WildlifeLICDataset` trả về ảnh và ROI mask **crop khớp nhau tuyệt đối** — stack ảnh+mask thành một array trước khi crop, không gọi `random_crop_arr` hai lần độc lập
+- [ ] **INFRA-01**: `CameraTrapDataset` (`dataset/camera_trap_dataset.py`) trả về ảnh và ROI mask **crop khớp nhau tuyệt đối** — ảnh và mask cùng một phép resize/crop/lật, không crop hai lần độc lập; crop lấy từ ảnh đã đưa về đúng độ phân giải xử lý của EVAL-11
 - [ ] **INFRA-02**: Lấy mẫu crop có định hướng theo bbox với tỉ lệ cấu hình được, và tỉ lệ crop thực sự chứa động vật được log ra mỗi run
 - [ ] **INFRA-03**: Throughput và mức đốt compute unit **đo thật** bằng smoke-test ~2K iterations, dùng để hiệu chỉnh lại ngân sách của mọi phase còn lại
 - [ ] **INFRA-04**: Ngân sách compute unit được theo dõi liên tục trong `results.jsonl` và đối chiếu lại ở mỗi ranh giới phase, vì tier GPU Colab được cấp không xác định trước
@@ -47,12 +47,25 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **EVAL-09**: Bootstrap confidence interval tính cho **mọi con số headline**, không chỉ bảng AP của H2
 - [ ] **EVAL-10**: Baseline Diff-ICMH gốc (checkpoint tác giả, chưa fine-tune) được chấm điểm trên miền bẫy ảnh — đây là hàng đối chứng chịu lực của toàn bộ bảng ablation
 
+### Eval-G — Đánh giá độc lập với bài so sánh (thêm 04/10/2026)
+
+Mục tiêu: một bộ checkpoint và **một lần giải mã** dùng được cho bất kỳ bài so sánh nào được chốt sau, không phải train hay giải mã lại.
+
+- [ ] **EVAL-11**: Giao thức đo **end-to-end ở độ phân giải gốc**: đầu vào là ảnh gốc (2592×2000), đầu ra là ảnh cùng kích thước, mọi chỉ số tính so với ảnh gốc. Độ phân giải xử lý bên trong (thu nhỏ trước khi nén, phóng to sau khi giải mã) là tham số chọn trên tập dev, mặc định cạnh dài 1024. Crop 256 ở giữa ảnh chỉ dùng cho smoke test, không dùng cho số báo cáo
+- [ ] **EVAL-12**: Mọi lượt giải mã đều lưu trên Drive: bitstream, ảnh tái tạo ở độ phân giải gốc, thời gian encode/decode từng ảnh. Chỉ số mới được tính lại từ kho lưu trữ này, không giải mã lại
+- [ ] **EVAL-13**: Mỗi lượt đánh giá tính đủ bộ chỉ số: PSNR, SSIM, MS-SSIM, LPIPS, DISTS (FID khi đủ mẫu), SSIM foreground (bbox MegaDetector), byte/ảnh, bpp, compression ratio = 24·H·W / số bit (H, W của ảnh gốc), thời gian encode/decode, kích thước model; chỉ số tác vụ máy theo EVAL-02..07
+- [ ] **EVAL-14**: Baseline phổ quát chạy trên cùng tập và cùng giao thức EVAL-11: JPEG và WebP (CPU, quét chất lượng), các model pretrained của CompressAI (`bmshj2018-hyperprior`, `mbt2018`, `cheng2020-attn`, chỉ inference), cùng với B0 (EVAL-10) và VTM/BPG (ANLS-06)
+- [ ] **EVAL-15**: Mỗi dòng `results.jsonl` ghi kèm thông tin giao thức: độ phân giải xử lý, độ phân giải đánh giá, thư viện + phiên bản SSIM, cách tính compression ratio, số bước DDIM, seed, định danh checkpoint (mở rộng schema EVAL-01, giữ tương thích ngược)
+- [ ] **EVAL-16**: Tập dev cố định lấy từ **validation** (vài trăm ảnh, phân tầng theo site, ngày/đêm, rỗng/có thú) dùng để chọn λ, núm giải mã, α, prompt và độ phân giải xử lý. Test split chỉ chạy một lần ở Phase 6
+
 ### H1 — Domain-adaptive fine-tuning
 
 - [ ] **H1-01**: Codec `E_c`/`D_c` + control module fine-tune được trên dữ liệu bẫy ảnh từ checkpoint tác giả, SD 2.1 và RAM++ giữ đóng băng
 - [ ] **H1-02**: Từng thành phần loss (`bpp`, `dist`, `diff`, `sem`) log riêng biệt để phát hiện sớm rate collapse
 - [ ] **H1-03**: Kiểm tra catastrophic forgetting định kỳ trong lúc train — decode Kodak/COCO ở các mốc cố định để bắt sớm việc lr phá generative prior
 - [ ] **H1-04**: Vùng bpp của model fine-tune **chồng lấn** vùng bpp của baseline, kiểm tra tăng dần chứ không đợi tới lúc dựng RD curve mới phát hiện không tính được BD-rate
+- [ ] **H1-05**: H1 chính là **một model chung** fine-tune trên train split **gộp của cả 20 site** Kgalagadi (7.191 ảnh) — ít overfit hơn model riêng từng site (nhiều site chỉ có 7–33 sequence train), rẻ hơn ~20 lần và đánh giá được trên tập test của bài so sánh bất kỳ. Chống overfit: chọn checkpoint theo validation, log chênh lệch loss train/val, ít epoch + LR thấp, kiểm tra Kodak định kỳ (H1-03). Model riêng từng site là V2-10
+- [ ] **H1-06**: Núm chỉnh phía giải mã không tốn bit (`c_cfg_scale`, `anchor_prior_strength`, số bước DDIM, giải mã thẳng `c_latent` qua VAE) được quét trên tập dev EVAL-16 để thêm điểm RD mà không phải train
 
 ### H2 — ROI-weighted loss
 
@@ -65,7 +78,7 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 
 ### H3 — Domain-aware Tag Guidance Module (tầng L1 + L2, không cần training)
 
-- [ ] **H3-01**: Vocab RAM++ thu gọn xuống ~256 tag liên quan động vật hoang dã, mã hoá 8 bits/tag thay vì 13
+- [ ] **H3-01**: Vocab RAM++ thu gọn (tối đa ~256 tag liên quan động vật hoang dã), mã hoá ⌈log₂ n⌉ bit/tag thay vì 13; bản hiện tại 37 tag / 6 bit (`data/vocab/kgalagadi_wildlife_tags.txt`), quy mô cuối chốt sau H3-05
 - [ ] **H3-02**: Structured attribute từ metadata thật — `illumination` suy từ chính ảnh, `season`/giờ từ timestamp, `habitat` từ site ID; tách bạch trong báo cáo với trường phải dự đoán
 - [ ] **H3-03**: Tag mới nối vào qua wrapper quanh `TagGCM.extract_tag()`, **không sửa RAM++ và không cần training lại**
 - [ ] **H3-04**: Overhead bit thực tế của tag đo được và đối chiếu với bitstream latent
@@ -73,6 +86,8 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **H3-06**: Ít nhất 3 template prompt được so sánh có hệ thống, bắt buộc có một template nêu rõ tính chất hồng ngoại đơn sắc
 - [ ] **H3-07**: Kiểm tra ảo giác màu trên ảnh đêm IR — xác nhận phương sai chroma của ảnh decode gần 0, vì SD 2.1 gần như không có prior cho ảnh IR đơn sắc
 - [ ] **H3-08**: Thí nghiệm đổi prompt lúc decode chạy chồng lên checkpoint H1/H2 để lấp ô bảng ablation với chi phí gần bằng 0
+- [ ] **H3-09**: Ảnh đêm IR được **ép thành ảnh xám khi giải mã**, dựa trên bit ngày/đêm có trong bitstream (bit này phải được truyền và tính vào BPP kể cả khi không bật metadata H3). Đo riêng trên ảnh đêm: SSIM, LPIPS, phương sai chroma trước/sau khi ép xám. Không cần train (thêm 04/10/2026)
+- [ ] **H3-10**: **Chọn bitrate theo nội dung** ở encoder: MegaDetector (detector/ngưỡng cố định) chạy trên ảnh gốc; ảnh rỗng mã hoá bằng checkpoint λ cao (nén mạnh), ảnh có thú bằng λ thấp; 1 bit trong bitstream cho decoder biết dùng checkpoint nào, tính vào BPP. Báo cáo bắt buộc: tỉ lệ ảnh có thú bị detector bỏ sót (bị nén mạnh nhầm) và ảnh hưởng của nó lên detection/species. Chỉ dùng checkpoint có sẵn, không train (thêm 04/10/2026)
 
 ### Analysis — Tổng hợp và đo cái giá của chuyên biệt hoá
 
@@ -84,6 +99,7 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **ANLS-06**: Anchor VTM/BPG chạy nền trên CPU để đặt kết quả vào bối cảnh, không cạnh tranh compute unit với training
 - [ ] **ANLS-07**: Failure taxonomy — phân loại các dạng lỗi quan sát được kèm ví dụ ảnh, không chỉ chọn ảnh đẹp
 - [ ] **ANLS-08**: Mọi figure sinh tự động từ `results.jsonl` qua `make_all_figures.py`, không hardcode số liệu
+- [ ] **ANLS-09**: Bài so sánh ngoài được chốt **trước khi vào Phase 6** (ứng viên: Xie et al., CCAI@NeurIPS 2025, cùng Snapshot Kgalagadi; *Class-Agnostic Triple Attention ... Wildlife Camera Trap Images* (Springer); SLIM, arXiv 2512.18200). Khi đã chốt: tính lại chỉ số của bài đó từ kho EVAL-12 và vẽ chung đồ thị — **không train lại**. Nếu bài có code công khai thì chạy lại trên đúng tập test và giao thức EVAL-11
 
 ### Report — Đóng gói và bàn giao
 
@@ -110,6 +126,8 @@ Hoãn sang sau. Có ghi nhận nhưng không nằm trong roadmap hiện tại.
 - **V2-06**: H3 tầng L3 — grid không gian 3×3 và đếm cá thể thô, cần control module học đọc prompt dạng mới
 - **V2-07**: H2 biến thể V3 — thêm term rate-allocation tường minh
 - **V2-08**: Dataset bẫy ảnh thứ ba (Wellington / Idaho / Missouri) cho phân tích tổng quát hoá rộng hơn
+- **V2-09**: Ảnh nền tham chiếu theo site — gửi một ảnh nền mỗi site một lần, từng ảnh sau chỉ mã hoá phần khác biệt so với nền; khai thác tối đa việc camera đứng yên nhưng cần đổi kiến trúc codec (Future Work)
+- **V2-10**: Fine-tune riêng từng site từ model H1 chung, chỉ trên site đủ dữ liệu (B06, A01), để đo lợi ích chuyên biệt hoá theo site
 
 ## Out of Scope
 
@@ -122,9 +140,9 @@ Loại trừ tường minh. Ghi lại để chống scope creep.
 | Individual re-ID qua hoa văn | Bị chặn bởi trần vật lý VAE: chu kỳ sọc còn 0,6–1 ô latent sau downsample 8×, dưới ngưỡng Nyquist. Sẽ chứng minh giới hạn này, không hứa hẹn vượt qua. |
 | Đánh bại VTM-18.2 về PSNR | Generative codec vốn thua VTM ở PSNR cùng bpp. Baseline đúng là chính Diff-ICMH gốc. |
 | Sửa trọng số SD 2.1 UNet hoặc VAE | Phá tan generative prior — mâu thuẫn thiết kế gốc và là nguồn gốc của chính trần chất lượng đang đo. |
-| Segmentation trong v1 | Cắt để tiết kiệm 1 conda env và thời gian decode. CCT vẫn dùng làm site giữ ngoài cho detection/species nên bảng cái giá chuyên biệt hoá không bị ảnh hưởng. |
+| Segmentation trong v1 | Cắt để tiết kiệm 1 conda env và thời gian decode. Detection/species vẫn đủ cho bảng cái giá chuyên biệt hoá. |
 | MegaDescriptor trong v1 | Cắt để tiết kiệm env hay xung đột dependency. Trần VAE chứng minh bằng Nyquist + FFT với chi phí gần bằng 0. |
-| Nhãn segmentation thật cấp pixel | Không tồn tại cho miền bẫy ảnh. Mọi mask là pseudo-GT từ SAM và phải ghi rõ trong Limitations. |
+| Nhãn segmentation thật cấp pixel | Không tồn tại cho miền bẫy ảnh. Mọi mask là pseudo-label từ bbox MegaDetector và phải ghi rõ trong Limitations. |
 | Background execution của Colab | Chỉ có ở gói Pro+. Kiến trúc phải giả định session chết bất kỳ lúc nào, không trông cậy tính năng này. |
 
 ## Traceability
@@ -161,10 +179,18 @@ Phase nào phủ requirement nào. Cập nhật khi tạo roadmap.
 | EVAL-07 | Phase 2 | Pending |
 | EVAL-09 | Phase 2 | Pending |
 | EVAL-10 | Phase 2 | Pending |
+| EVAL-11 | Phase 2 | Pending |
+| EVAL-12 | Phase 2 | Pending |
+| EVAL-13 | Phase 2 | Pending |
+| EVAL-14 | Phase 2 | Pending |
+| EVAL-15 | Phase 2 | Pending |
+| EVAL-16 | Phase 2 | Pending |
 | H1-01 | Phase 3 | Pending |
 | H1-02 | Phase 3 | Pending |
 | H1-03 | Phase 3 | Pending |
 | H1-04 | Phase 3 | Pending |
+| H1-05 | Phase 3 | Pending |
+| H1-06 | Phase 3 | Pending |
 | REPT-02 | Phase 3 | Pending |
 | H2-01 | Phase 4 | Pending |
 | H2-02 | Phase 4 | Pending |
@@ -180,6 +206,8 @@ Phase nào phủ requirement nào. Cập nhật khi tạo roadmap.
 | H3-06 | Phase 5 | Pending |
 | H3-07 | Phase 5 | Pending |
 | H3-08 | Phase 5 | Pending |
+| H3-09 | Phase 5 | Pending |
+| H3-10 | Phase 5 | Pending |
 | ANLS-01 | Phase 6 | Pending |
 | ANLS-02 | Phase 6 | Pending |
 | ANLS-03 | Phase 6 | Pending |
@@ -188,16 +216,17 @@ Phase nào phủ requirement nào. Cập nhật khi tạo roadmap.
 | ANLS-06 | Phase 6 | Pending |
 | ANLS-07 | Phase 6 | Pending |
 | ANLS-08 | Phase 6 | Pending |
+| ANLS-09 | Phase 6 | Pending |
 | REPT-01 | Phase 6 | Pending |
 | REPT-03 | Phase 6 | Pending |
 | REPT-04 | Phase 6 | Pending |
 | REPT-05 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 59 total (sửa từ 52 lúc tạo roadmap — 52 là lỗi đếm ở bước định nghĩa requirements; 59 là số requirement có ID cụ thể thực tế trong tài liệu này)
-- Mapped to phases: 59
+- v1 requirements: 70 total (59 ban đầu + 11 thêm ngày 04/10: EVAL-11..16, H1-05, H1-06, H3-09, H3-10, ANLS-09)
+- Mapped to phases: 70
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-09-08*
-*Last updated: 2026-09-08 after roadmap creation (Traceability + Coverage filled in; requirement count corrected 52 → 59)*
+*Last updated: 2026-10-04 — quyết định đánh giá độc lập với bài so sánh (Eval-G), H1 model chung, sửa PRE-05/DATA-02/INFRA-01/H3-01 cho khớp code*
