@@ -48,7 +48,11 @@ def test_generated_notebook_checks_resume_and_end_to_end_metrics():
     assert "RESUME_TARGET_STEP = SMOKE_GLOBAL_STEP + 1" in code
     assert "'--resume', str(PROJECT_CKPT)" in code
     assert "RESUME THÀNH CÔNG" in code
-    assert "'h1_v2'" in code
+    assert "'phase1_calib'" in code
+    assert "'runs' / 'h1' /" not in code
+    assert "STEADY_SECONDS_PER_STEP = float(THROUGHPUT" in code
+    assert "'--steady-seconds-per-step', str(STEADY_SECONDS_PER_STEP)" in code
+    assert "'--measured-cu-consumed', str(measured_cu_consumed)" in code
     assert "'--limit', '2'" in code
     assert "'--results-registry', str(RESULTS_REGISTRY)" in code
     assert "END-TO-END THÀNH CÔNG" in code

@@ -105,9 +105,15 @@ def build_closeout_report(
     calibration_target_steps: int,
     gpu_name: str,
     git_commit: str,
+    steady_seconds_per_step: float | None = None,
+    measured_cu_consumed: float | None = None,
 ) -> dict:
     if smoke_steps <= 0 or smoke_elapsed_seconds <= 0 or cu_per_hour <= 0:
         raise ValueError("smoke steps, elapsed seconds and CU/hour must be positive")
+    if steady_seconds_per_step is not None and steady_seconds_per_step <= 0:
+        raise ValueError("steady seconds per step must be positive")
+    if measured_cu_consumed is not None and measured_cu_consumed < 0:
+        raise ValueError("measured CU consumption cannot be negative")
     split_violations = split_check.find_violations(manifest_rows)
     if split_violations:
         raise split_check.SplitLeakageError("; ".join(split_violations[:5]))
@@ -134,10 +140,19 @@ def build_closeout_report(
         )
 
     registry = _validate_registry(result_rows, exp_id)
-    seconds_per_step = smoke_elapsed_seconds / smoke_steps
+    wall_clock_seconds_per_step = smoke_elapsed_seconds / smoke_steps
+    # Wall clock includes model construction and validation; prefer the steady-state
+    # training speed from ThroughputMonitor when available.
+    if steady_seconds_per_step is not None:
+        seconds_per_step = steady_seconds_per_step
+        projection_source = "measured_steady_throughput"
+    else:
+        seconds_per_step = wall_clock_seconds_per_step
+        projection_source = "measured_smoke_extrapolation"
     projected_seconds = seconds_per_step * calibration_target_steps
     projected_cu = projected_seconds / 3600 * cu_per_hour
-    remaining_cu = max(phase_budget_cu - consumed_cu_estimate, 0.0)
+    consumed_cu = measured_cu_consumed if measured_cu_consumed is not None else consumed_cu_estimate
+    remaining_cu = max(phase_budget_cu - consumed_cu, 0.0)
     within_budget = projected_cu <= remaining_cu
     recommendation = (
         "run_2k_allowed_not_started" if within_budget else "do_not_run_2k"
@@ -175,19 +190,28 @@ def build_closeout_report(
             "results_registry": {"passed": True, "exp_id": exp_id, **registry},
         },
         "calibration": {
-            "source": "measured_smoke_extrapolation",
+            "source": projection_source,
             "smoke_steps": smoke_steps,
             "smoke_elapsed_seconds": smoke_elapsed_seconds,
+            "wall_clock_seconds_per_step": wall_clock_seconds_per_step,
+            "steady_seconds_per_step": steady_seconds_per_step,
             "seconds_per_optimizer_step": seconds_per_step,
             "target_steps": calibration_target_steps,
             "projected_elapsed_seconds": projected_seconds,
             "projected_cu_estimate": projected_cu,
             "consumed_cu_estimate": consumed_cu_estimate,
+            "measured_cu_consumed": measured_cu_consumed,
+            "consumed_cu_source": (
+                "colab_available_delta" if measured_cu_consumed is not None else "elapsed_time_estimate"
+            ),
             "phase_budget_cu": phase_budget_cu,
             "remaining_budget_cu": remaining_cu,
             "within_remaining_budget": within_budget,
             "recommendation": recommendation,
-            "note": "CU values are estimates from elapsed time and CU/hour, not Colab billing records.",
+            "note": (
+                "Projected CU = projected hours x cu_per_hour (an estimate). measured_cu_consumed, "
+                "when present, is the drop in Colab Resources 'Available' over the whole session."
+            ),
         },
         "classification": "smoke/non-report",
     }
@@ -218,6 +242,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cu-per-hour", type=float, required=True)
     parser.add_argument("--phase-budget-cu", type=float, default=8.0)
     parser.add_argument("--calibration-target-steps", type=int, default=2000)
+    parser.add_argument("--steady-seconds-per-step", type=float, default=None,
+                        help="steady-state s/optimizer step from ThroughputMonitor")
+    parser.add_argument("--measured-cu-consumed", type=float, default=None,
+                        help="drop in Colab Resources 'Available' since session start")
     parser.add_argument("--gpu-name", required=True)
     parser.add_argument("--git-commit", required=True)
     parser.add_argument("--output", required=True)
@@ -248,6 +276,8 @@ def main(argv=None) -> int:
         calibration_target_steps=args.calibration_target_steps,
         gpu_name=args.gpu_name,
         git_commit=args.git_commit,
+        steady_seconds_per_step=args.steady_seconds_per_step,
+        measured_cu_consumed=args.measured_cu_consumed,
     )
     report["environment"] = _environment_versions()
     output = Path(args.output)

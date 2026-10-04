@@ -82,9 +82,9 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
 | 5. `results.jsonl` + CU đo thật | Đạt một phần | Registry có dòng smoke (2 ảnh, DDIM 5, `smoke/non-report`). CU hiện chỉ là ước lượng giờ × 1,54; throughput 2K step chưa đo |
 
 **Việc còn lại của Phase 1:**
-1. **Sinh artifact closeout** `phase1_metadata_KGA_A01.json` và `phase1_closeout_KGA_A01.json`. Lưu ý: Bước 10 dùng biến trong bộ nhớ của Bước 7–9 (`smoke_hours`, `PROJECT_CKPT`, `SMOKE_GLOBAL_STEP`, `resumed_step`, `decode_cu_estimate`...). Runtime 27/09 đã mất nên **không thể chạy riêng Bước 10**; phải chạy lại Bước 1–9 trong cùng runtime, hoặc sửa Bước 10 để đọc mọi đầu vào từ Drive.
-2. **Đo throughput thật (INFRA-03):** lấy tốc độ ổn định (it/s trong log Lightning, 1 optimizer step = 8 batch) thay vì chia tổng thời gian Bước 7 cho 20 step — tổng thời gian gồm cả vài phút dựng model/nạp checkpoint nên làm dự báo 2K step bị phóng đại. Nếu chạy lại Bước 7 vào run dir đã có `last.ckpt` (step 21), Lightning dừng ngay vì `max_steps=20` ⇒ không đo được gì; phải dùng run dir mới.
-3. **CU thật (INFRA-04):** ghi "Available" trong Colab Resources trước và sau phiên (mốc 04/10: 74,37 CU), thay cho hằng số `COLAB_CU_PER_HOUR = 1.54`.
+1. **Sinh artifact closeout** `phase1_metadata_KGA_A01.json` và `phase1_closeout_KGA_A01.json`: một phiên Colab chạy liền Bước 1→10 (Bước 10 dùng biến trong bộ nhớ của Bước 7–9; runtime 27/09 đã mất nên không chạy riêng Bước 10 được).
+2. **Đo throughput thật (INFRA-03):** *code xong 04/10.* `ThroughputMonitor` ghi `throughput.json` (median giây/batch × 8, bỏ khởi động và validation); Bước 7 luôn train vào run dir mới `runs/phase1_calib/<site>/<giờ chạy>` nên không còn lỗi dừng ngay khi run dir đã ở step 21; closeout dự báo 2K step bằng tốc độ ổn định.
+3. **CU thật (INFRA-04):** *code xong 04/10.* Bước 1 nhận `CU_AVAILABLE_AT_START`, Bước 10 nhận `CU_AVAILABLE_NOW` (số "Available" trong Colab Resources; mốc 04/10: 74,37 CU); closeout dùng chênh lệch làm CU đã tiêu.
 4. **(Khuyến nghị) Kill giữa chừng (PRE-06):** trong lượt calibration, sau khi có checkpoint rolling step 50, ngắt runtime; runtime mới chạy lại → log phải có `Auto-resume selected ...`.
 5. Cập nhật `.planning/STATE.md`, `01-VERIFICATION.md` và bảng Progress khi có artifact; dùng số đo để hiệu chỉnh bảng ngân sách (recalibration checkpoint 1).
 

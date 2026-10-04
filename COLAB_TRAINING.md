@@ -29,6 +29,7 @@ MyDrive/wild_diff_icmh/
   tags/KGA_<site>.jsonl                # cache RAM++ (Bước 6), resumable
   detections/kgalagadi_megadetector.json
   runs/
+    phase1_calib/<site>/<YYYYmmdd-HHMMSS>/   # smoke Bước 7–8: checkpoint + throughput.json
     h1_v2/<site>/{config.yaml, config_model.yaml, checkpoints/last.ckpt, best.ckpt}
     h1_control/<site>/...
     h2/<site>/...
@@ -73,8 +74,12 @@ MyDrive/wild_diff_icmh/
 - Nhịp checkpoint: rolling mỗi 50 optimizer step + `last.ckpt` cuối mỗi lượt `trainer.fit`
   (ghi `.part`, kiểm tra, rồi mới thay). Khi resume, checkpoint được chép về đĩa local trước khi
   nạp; file hỏng bị bỏ qua và dùng file hợp lệ cũ hơn.
-- **Chạy lại Bước 7 vào run dir đã có checkpoint ≥ `max_steps`** thì Lightning dừng ngay, không
-  train gì. Muốn đo lại thì dùng run dir mới.
+- Bước 7 luôn tạo run dir mới `runs/phase1_calib/<site>/<giờ chạy>` vì chạy lại vào run dir đã
+  có checkpoint ≥ `max_steps` thì Lightning dừng ngay, không train gì. Lượt train thật (H1/H2)
+  dùng run dir cố định để tự resume.
+- `ThroughputMonitor` (trong `train_kgalagadi_colab.yaml`) ghi `throughput.json` vào run dir:
+  median giây/batch × `accumulate_grad_batches`, bỏ 8 batch khởi động và thời gian validation.
+  Đây là số dùng để tính ngân sách, không dùng tổng thời gian cell.
 - Bước 8 resume đúng checkpoint của Bước 7 (`--resume PROJECT_CKPT`) và yêu cầu step tăng.
   Nếu báo checkpoint hỏng: chạy lại Bước 7 một lần rồi mới chạy Bước 8.
 - `tools/train_kgalagadi_sites.py --max-sites N` chạy tuần tự nhiều site và bỏ qua site đã có
@@ -106,16 +111,21 @@ MyDrive/wild_diff_icmh/
 
 ## Đóng Phase 1 (Bước 10)
 
-- Bước 10 dùng biến trong bộ nhớ của Bước 7–9 (`smoke_hours`, `PROJECT_CKPT`, `resumed_step`,
-  `decode_cu_estimate`, ...). **Runtime mới thì phải chạy lại Bước 1–9 trước**, không chạy riêng
+- Bước 10 dùng biến trong bộ nhớ của Bước 7–9 (`PROJECT_CKPT`, `STEADY_SECONDS_PER_STEP`,
+  `resumed_step`, ...). **Runtime mới thì phải chạy lại Bước 1–9 trước**, không chạy riêng
   Bước 10 được.
-- Dự báo chi phí 2K step trong closeout lấy tổng thời gian Bước 7 chia 20 step, gồm cả thời gian
-  dựng model và validation — con số bị phóng đại. Tốc độ ổn định xem ở `it/s` trong
-  `logs/train_smoke_*.log` (1 optimizer step = 8 batch).
+- Điền `CU_AVAILABLE_AT_START` ở Bước 1 và `CU_AVAILABLE_NOW` ở Bước 10 (số "Available" trong
+  Runtime → View resources). Thiếu một trong hai thì Bước 10 dừng. Quên điền ở Bước 1 thì gán
+  lại ngay trong cell Bước 10 (dùng số đã ghi lúc bắt đầu phiên).
+- Dự báo 2K step dùng tốc độ ổn định từ `throughput.json`; báo cáo vẫn ghi kèm số chia theo tổng
+  thời gian (`wall_clock_seconds_per_step`) để đối chiếu.
+- Gửi lại: `results/phase1_metadata_<site>.json`, `results/phase1_closeout_<site>.json` và
+  `throughput.json` trong run dir.
 
 ## Compute unit
 
 - Hằng số `COLAB_CU_PER_HOUR = 1.54` trong notebook chỉ để ước lượng. CU thật = chênh lệch
-  "Available" trong Colab Resources trước và sau phiên; ghi lại mỗi phiên.
+  "Available" trong Colab Resources trước và sau phiên; ghi lại mỗi phiên (Bước 1 và Bước 10
+  có ô để điền).
 - Runtime GPU tốn CU cả khi đang cài đặt hoặc chép ảnh; ngắt runtime ngay khi xong việc.
 - Chọn L4 thủ công (quyết định D-04); notebook không có nhánh riêng cho T4/A100.

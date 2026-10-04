@@ -34,10 +34,12 @@ cells = [
         - Bước 1–3: phải chạy ở mỗi runtime mới.
         - Bước 4–5: cũng chạy ở mỗi runtime mới; cell tự bỏ qua file đã có trong `/content`.
         - Bước 6: tag lưu trên Drive; cell tự bỏ qua nếu đã đủ, hoặc tiếp tục phần còn thiếu.
-        - Bước 7: chạy smoke test 20 step và kiểm tra checkpoint có optimizer/global step.
+        - Bước 7: chạy smoke test 20 step vào một thư mục run **mới** (mỗi lần chạy một thư mục),
+          đo tốc độ train ổn định và kiểm tra checkpoint có optimizer/global step.
         - Bước 8: chạy thêm đúng 1 step từ checkpoint để xác nhận resume toàn trạng thái.
         - Bước 9: decode 2 ảnh test, tính metric và ghi `results/results.jsonl` trên Drive.
         - Bước 10: audit metadata 100 ảnh và ghi báo cáo khép Phase 1; không chạy thêm GPU job.
+          **Bước 7–10 phải chạy liền trong cùng runtime.**
 
         Trong **cùng một runtime**, nếu một cell đã có dấu tích xanh thì không cần chạy lại,
         trừ khi cell đó vừa báo lỗi.
@@ -46,12 +48,23 @@ cells = [
         cell vừa lỗi. Không cần copy cell pull tạm và không cần chạy lại các bước đã thành công.
         """
     ),
-    markdown("## Bước 1 — Gắn Google Drive (mỗi runtime mới)"),
+    markdown(
+        """
+        ## Bước 1 — Gắn Google Drive (mỗi runtime mới)
+
+        Trước khi chạy, mở **Runtime → View resources** và chép số compute unit
+        **"Available"** vào `CU_AVAILABLE_AT_START`. Bước 10 dùng số này để tính CU thật đã tiêu.
+        """
+    ),
     code(
         """
+        CU_AVAILABLE_AT_START = None  # ví dụ 74.37 — số "Available" lúc bắt đầu phiên
+
         from google.colab import drive
 
         drive.mount('/content/drive')
+        if CU_AVAILABLE_AT_START is None:
+            print('Nhắc: chưa điền CU_AVAILABLE_AT_START; Bước 10 sẽ yêu cầu số này.')
         """
     ),
     markdown("## Bước 2 — Lấy mã nguồn và kiểm tra GPU (mỗi runtime mới)"),
@@ -451,15 +464,26 @@ cells = [
         ## Bước 7 — Smoke test training 20 step
 
         Chỉ chạy sau khi Bước 1–6 đều thành công. Log training có tiến trình của Lightning.
-        Nếu đã có checkpoint trong thư mục run trên Drive, cấu hình sẽ tự resume.
+        Mỗi lần chạy cell này dùng một thư mục run mới `runs/phase1_calib/<site>/<giờ chạy>`,
+        nên luôn train đủ 20 step từ checkpoint tác giả (chạy lại vào thư mục đã ở step ≥ 20
+        thì Lightning dừng ngay và số đo thời gian vô nghĩa). `ThroughputMonitor` ghi tốc độ
+        ổn định (không tính thời gian dựng model và validation) vào `throughput.json`.
         """
     ),
     code(
         """
-        # h1_v2 is intentionally fresh: h1/A01 checkpoints created before the
-        # entropy migration fix are unsafe to resume.
-        RUN_DIR = DRIVE_ROOT / 'runs' / 'h1_v2' / SITE.split(':')[-1]
         import time
+
+        # A fresh directory per run: re-running into a directory already at step >= 20 makes
+        # Lightning stop immediately and the timing meaningless. Never use runs/h1 (its
+        # checkpoints predate the entropy-bottleneck migration fix).
+        RUN_DIR = (
+            DRIVE_ROOT / 'runs' / 'phase1_calib' / SITE.split(':')[-1]
+            / time.strftime('%Y%m%d-%H%M%S')
+        )
+        if (RUN_DIR / 'checkpoints').exists():
+            raise RuntimeError(f'Thư mục run đã tồn tại: {RUN_DIR}')
+        print('Thư mục run mới:', RUN_DIR)
 
         COLAB_CU_PER_HOUR = 1.54  # sửa nếu bảng Tài nguyên hiển thị mức khác
         env = os.environ.copy()
@@ -538,7 +562,18 @@ cells = [
 
         PROJECT_CKPT = latest_full_checkpoint(RUN_DIR)
         SMOKE_GLOBAL_STEP = inspect_full_checkpoint(PROJECT_CKPT)
+        if SMOKE_GLOBAL_STEP != 20:
+            raise RuntimeError(f'Thư mục run mới phải dừng ở step 20, nhận {SMOKE_GLOBAL_STEP}')
+
+        # Read now: the one-step resume in Bước 8 writes to the same run directory.
+        THROUGHPUT = json.loads((RUN_DIR / 'throughput.json').read_text(encoding='utf-8'))
+        STEADY_SECONDS_PER_STEP = float(THROUGHPUT['seconds_per_optimizer_step'])
         print(f'Smoke test hoàn tất trong {smoke_hours:.2f} giờ (~{smoke_cu_estimate:.2f} CU).')
+        print(
+            f"Tốc độ ổn định: {STEADY_SECONDS_PER_STEP:.2f} s/optimizer step "
+            f"({THROUGHPUT['batches_measured']} batch đo, "
+            f"{THROUGHPUT['median_seconds_per_batch']:.2f} s/batch)"
+        )
         """
     ),
     markdown(
@@ -547,11 +582,8 @@ cells = [
 
         Cell này đặt đích bằng `global_step hiện tại + 1`. Nếu resume đúng, log phải có dòng
         `Restoring states from ...ckpt` và checkpoint mới phải tăng step trong khi vẫn có
-        `optimizer_states`. Muốn kiểm tra đúng tình huống Colab bị ngắt, hãy **khởi động lại
-        runtime**, chạy lại Bước 1–7 rồi mới chạy cell này; chạy ngay trong cùng runtime vẫn là
-        phép kiểm tra full-state resume hợp lệ. Nếu checkpoint cũ được báo là hỏng hoặc không
-        đọc được, chạy lại **Bước 7 đúng một lần** để bỏ qua file hỏng và tạo `last.ckpt` mới
-        theo cơ chế ghi an toàn, rồi mới chạy lại Bước 8.
+        `optimizer_states`. Chạy ngay sau Bước 7 trong cùng runtime là phép kiểm tra full-state
+        resume hợp lệ. Nếu báo lỗi, chạy lại Bước 7 (sẽ tạo thư mục run mới) rồi chạy lại Bước 8.
         """
     ),
     code(
@@ -695,10 +727,26 @@ cells = [
         đọc artifact đã có, audit metadata 100 ảnh và ghi hai báo cáo JSON lên Drive;
         **không train, không decode và không tự chạy 2K step**. Báo cáo sẽ nói rõ có nên
         chạy calibration 2K hay dừng vì dự báo vượt phần ngân sách còn lại.
+
+        Trước khi chạy: mở lại **Runtime → View resources** và chép số **"Available"** hiện tại
+        vào `CU_AVAILABLE_NOW`. Dự báo 2K dùng tốc độ ổn định đo ở Bước 7; CU đã tiêu là
+        chênh lệch hai số "Available" (cả phiên, kể cả cài đặt và chép ảnh).
         """
     ),
     code(
         """
+        CU_AVAILABLE_NOW = None  # số "Available" ngay lúc này
+
+        if CU_AVAILABLE_AT_START is None or CU_AVAILABLE_NOW is None:
+            raise ValueError(
+                'Điền CU_AVAILABLE_NOW ở cell này và CU_AVAILABLE_AT_START (gán trực tiếp '
+                'CU_AVAILABLE_AT_START = ... ở đây nếu quên điền ở Bước 1), rồi chạy lại cell.'
+            )
+        measured_cu_consumed = float(CU_AVAILABLE_AT_START) - float(CU_AVAILABLE_NOW)
+        if measured_cu_consumed < 0:
+            raise ValueError('CU_AVAILABLE_NOW lớn hơn số lúc bắt đầu; kiểm tra lại hai số đã chép.')
+        print(f'CU đã tiêu trong phiên (đo thật): {measured_cu_consumed:.2f}')
+
         METADATA_REPORT = DRIVE_ROOT / 'results' / f"phase1_metadata_{SITE.replace(':', '_')}.json"
         PHASE1_CLOSEOUT = DRIVE_ROOT / 'results' / f"phase1_closeout_{SITE.replace(':', '_')}.json"
         EXP_ID = f'phase1_h1_smoke_{SITE.replace(":", "_")}'
@@ -735,6 +783,8 @@ cells = [
             '--smoke-elapsed-seconds', str(smoke_hours * 3600),
             '--consumed-cu-estimate', str(consumed_cu_estimate),
             '--cu-per-hour', str(COLAB_CU_PER_HOUR),
+            '--steady-seconds-per-step', str(STEADY_SECONDS_PER_STEP),
+            '--measured-cu-consumed', str(measured_cu_consumed),
             '--phase-budget-cu', '8',
             '--calibration-target-steps', '2000',
             '--gpu-name', torch.cuda.get_device_name(0),
@@ -754,6 +804,9 @@ cells = [
             f"~{calibration['projected_cu_estimate']:.2f} CU"
         )
         print('Quyết định:', calibration['recommendation'])
+        print('Thư mục run:', RUN_DIR)
+        print('Gửi lại 2 file JSON trên + throughput.json trong thư mục run.')
+        print('Ngắt runtime ngay (Runtime → Disconnect and delete runtime) để ngừng tiêu CU.')
         """
     ),
     markdown(
@@ -761,9 +814,9 @@ cells = [
         ## Sau khi Phase 1 smoke test thành công
 
         Sau Bước 10, dùng quyết định trong `phase1_closeout_*.json` để cập nhật ngân sách.
-        Không tự chạy 2K nếu báo cáo ghi `do_not_run_2k`. Checkpoint nằm trong
-        `MyDrive/wild_diff_icmh/runs/`; runtime mới vẫn chạy lại Bước 1–6 trước, sau đó
-        training tự resume checkpoint mới nhất.
+        Không tự chạy 2K nếu báo cáo ghi `do_not_run_2k`. Checkpoint smoke nằm trong
+        `MyDrive/wild_diff_icmh/runs/phase1_calib/` và chỉ là bằng chứng Phase 1, không dùng
+        làm điểm khởi đầu cho H1.
         """
     ),
 ]

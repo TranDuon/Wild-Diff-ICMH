@@ -59,6 +59,11 @@ lightning:
     deterministic: true
 
   callbacks:
+    # Steady-state s/optimizer step for budget calibration (INFRA-03).
+    - target: model.callbacks.ThroughputMonitor
+      params:
+        output_name: throughput.json
+        warmup_batches: 8
     - target: model.callbacks.ImageLogger
       params:
         log_every_n_steps: 200
