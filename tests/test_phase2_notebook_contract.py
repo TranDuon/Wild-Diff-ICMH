@@ -81,3 +81,12 @@ def test_each_archive_is_scored_on_the_dev_list_it_was_decoded_for():
     assert "'--dev-list', DEV_LIST, '--image-root', root" not in code
     source = (ROOT / "inference_partition.py").read_text(encoding="utf-8")
     assert "'dev_list': os.path.abspath(args.dev_list) if args.dev_list else None" in source
+
+
+def test_baseline_reconstructions_stay_off_drive():
+    code = _code()
+    assert "BASELINE_ROOT = Path('/content/p2_baselines')" in code
+    assert "'--output', BASELINE_ROOT / curve / f'q{quality}'" in code
+    assert "ARCHIVE / curve / f'q{quality}'" not in code
+    assert "ARCHIVE.glob('B0_*/*/run_info.json')" in code
+    assert "pack_bitstreams(root, curve, point)" in code

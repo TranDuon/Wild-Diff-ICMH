@@ -85,7 +85,9 @@ cells = [
         DEV_LIST = P2 / 'kgalagadi_dev.txt'
         DETECTIONS = P2 / 'detections' / 'originals.jsonl'
         TAGS_ALL = DRIVE_ROOT / 'tags' / 'KGA_all.jsonl'
-        ARCHIVE = P2 / 'archive'
+        ARCHIVE = P2 / 'archive'                        # B0 (expensive to redo): full archive on Drive
+        BASELINE_ROOT = Path('/content/p2_baselines')   # JPEG/WebP/CompressAI: local SSD only
+        BITSTREAMS = P2 / 'bitstreams'                  # one tar of baseline bitstreams per point
         EVAL_DIR = P2 / 'eval'
         RESULTS_REGISTRY = DRIVE_ROOT / 'results' / 'results.jsonl'
         SD_CKPT = CKPT_ROOT / 'sd2p1' / 'v2-1_512-ema-pruned.ckpt'
@@ -95,7 +97,7 @@ cells = [
             'params.control_stage_config.params.control_model_ratio=1.0',
             'params.c_cfg_scale=3.0',
         ]
-        for folder in (ARCHIVE, EVAL_DIR, DETECTIONS.parent):
+        for folder in (ARCHIVE, EVAL_DIR, DETECTIONS.parent, BITSTREAMS, BASELINE_ROOT):
             folder.mkdir(parents=True, exist_ok=True)
 
 
@@ -391,6 +393,11 @@ cells = [
         ## P2-8 — Baseline JPEG / WebP (CPU, chạy song song 4 tiến trình)
 
         JPEG ở độ phân giải gốc, ở cạnh dài 1024 và 512; WebP ở 1024 và 512. Cùng giao thức: ảnh gốc vào, ảnh gốc ra.
+
+        Ảnh tái tạo của baseline (~10 MB/ảnh PNG) ghi vào ổ cục bộ `/content/p2_baselines`, **không ghi lên
+        Drive** — ghi hàng chục GB lên Drive làm Colab bị chặn ("Google Drive quota exceeded"). Chúng tính lại
+        được từ bitstream trong vài giây; sau khi chấm (P2-10), chỉ bitstream được gói thành một file `.tar`
+        lên Drive. Điểm nào đã chấm thì bỏ qua cả bước nén.
         """
     ),
     code(
@@ -401,13 +408,18 @@ cells = [
             + [('webp', q, side) for q in (5, 15, 40) for side in (1024, 512)]
         )
 
+        def scored(curve, point):
+            return (EVAL_DIR / f'{curve}__{point}.done.json').is_file()
+
         def run_classical(job):
             codec, quality, side = job
             curve = f"{codec}_{'full' if side is None else f'ls{side}'}"
+            if scored(curve, f'q{quality}'):
+                return curve, quality
             command = [
                 sys.executable, '-u', 'tools/baselines/run_classical.py', '--manifest', MANIFEST,
                 '--data-root', LOCAL_IMAGES, '--split', 'val', '--dev-list', DEV_LIST,
-                '--codec', codec, '--quality', quality, '--output', ARCHIVE / curve / f'q{quality}',
+                '--codec', codec, '--quality', quality, '--output', BASELINE_ROOT / curve / f'q{quality}',
                 '--skip-existing',
             ]
             if side:
@@ -433,11 +445,13 @@ cells = [
         for model in ('bmshj2018-hyperprior', 'mbt2018', 'cheng2020-attn'):
             for quality, side in [(q, s) for q in (1, 2, 3) for s in (1024, 512)]:
                 curve = f'compressai-{model}_ls{side}'
+                if scored(curve, f'q{quality}'):
+                    continue
                 run_logged([
                     sys.executable, '-u', 'tools/baselines/run_compressai_zoo.py', '--manifest', MANIFEST,
                     '--data-root', LOCAL_IMAGES, '--split', 'val', '--dev-list', DEV_LIST,
                     '--model', model, '--quality', quality, '--processing-long-side', side,
-                    '--output', ARCHIVE / curve / f'q{quality}', '--skip-existing',
+                    '--output', BASELINE_ROOT / curve / f'q{quality}', '--skip-existing',
                 ], f'p2_{curve}_q{quality}.log', echo=False)
                 print('Xong', curve, 'q', quality)
         """
@@ -446,7 +460,7 @@ cells = [
         """
         ## P2-10 — Chấm điểm mọi kho lưu trữ
 
-        Với mỗi `phase2/archive/<đường>/<điểm>/`: chỉ số ảnh (PSNR, SSIM ×2, MS-SSIM, LPIPS, DISTS, bpp,
+        Với mỗi kho B0 trên Drive (`phase2/archive/B0_*/<điểm>/`) và mỗi kho baseline trên ổ cục bộ: chỉ số ảnh (PSNR, SSIM ×2, MS-SSIM, LPIPS, DISTS, bpp,
         compression ratio, thời gian) + MegaDetector trên ảnh tái tạo → mAP, ảnh rỗng báo nhầm, ảo giác,
         mất con vật. Tất cả ghi vào `results/results.jsonl` với `exp_id = p2dev_<đường>__<điểm>`.
         Chỉ chấm đúng các ảnh đã có trong kho (`decode_log.jsonl`); kho đã chấm thì bỏ qua, trừ khi kho
@@ -460,7 +474,19 @@ cells = [
         except ImportError:
             subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'pycocotools'], check=True)
 
-        for run_info in sorted(ARCHIVE.glob('*/*/run_info.json')):
+        import tarfile
+
+        def pack_bitstreams(root, curve, point):
+            # One file on Drive per point instead of hundreds of small writes.
+            target = BITSTREAMS / curve / f'{point}.tar'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(target, 'w') as bundle:
+                for path in sorted(root.rglob('*')):
+                    if path.is_file() and (path.parent.name == 'data' or path.name in ('decode_log.jsonl', 'run_info.json')):
+                        bundle.add(path, arcname=path.relative_to(root).as_posix())
+
+        archives = sorted(ARCHIVE.glob('B0_*/*/run_info.json')) + sorted(BASELINE_ROOT.glob('*/*/run_info.json'))
+        for run_info in archives:
             root = run_info.parent
             curve, point = root.parent.name, root.name
             name = f'{curve}__{point}'
@@ -498,6 +524,9 @@ cells = [
                 '--method', curve, '--lambda-rate', point, '--ddim-steps', info.get('steps', 0),
             ], f'p2_machine_{name}.log', echo=False)
             done_marker.write_text(json.dumps({'images': archived}))
+            if BASELINE_ROOT in root.parents:
+                pack_bitstreams(root, curve, point)
+                shutil.rmtree(root)  # ~3 GB of PNGs per point; reproducible from the bitstream tar
             print('Đã chấm:', name, f'({archived} ảnh)')
         """
     ),
