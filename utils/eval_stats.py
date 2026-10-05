@@ -52,8 +52,12 @@ def bootstrap_ci(
     n_resamples: int = 1000,
     seed: int = 0,
     level: float = CI_LEVEL,
+    summarize: Callable[[Sequence[Mapping[str, object]]], Mapping[str, object]] | None = None,
 ) -> dict:
     """Percentile confidence intervals for every aggregated metric (EVAL-09).
+
+    ``summarize`` maps a resampled row list to ``{metric: value}``; the default
+    is :func:`aggregate` over ``metric_names``.
 
     Resamples whole sites when the rows span several sites, because images of
     one camera are correlated; falls back to resampling images otherwise.
@@ -72,15 +76,13 @@ def bootstrap_ci(
 
     rng = random.Random(seed)
     draws: dict[str, list[float]] = {}
-    names = ["bpp", "compression_ratio_rgb24", "bytes_per_image", *[
-        name for name in metric_names if name not in RATE_METRICS
-    ]]
+    summarize = summarize or (lambda sample: aggregate(sample, metric_names))
     for _ in range(n_resamples):
         sample = [row for cluster in rng.choices(clusters, k=len(clusters)) for row in cluster]
-        summary = aggregate(sample, metric_names)
-        for name in names:
-            value = summary.get(name)
-            if value is not None and math.isfinite(value):
+        for name, value in summarize(sample).items():
+            if name in ("n", "pixels") or isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if math.isfinite(value):
                 draws.setdefault(name, []).append(float(value))
 
     alpha = (1.0 - level) / 2.0
