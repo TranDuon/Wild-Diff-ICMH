@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 1
-current_phase_name: Khung xương end-to-end tối thiểu + vá lỗi chặn
-status: verifying
-stopped_at: Phase 1 Bước 10 live Colab verification
+current_phase: 2
+current_phase_name: Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline
+status: executing
+stopped_at: Phase 2 plan 02-01 (original-resolution protocol)
 last_updated: "2026-09-27T16:22:57.295Z"
 last_activity: 2026-09-27
 last_activity_desc: "Implemented Phase 1 metadata audit and Colab Bước 10 closeout; awaiting live artifact"
 state_head: 5afb7b2f63ef0ec06398867d71689de138d1ff83
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
   completed_plans: 2
   percent: 0
@@ -23,18 +23,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Chứng minh được rằng cơ chế chuyên biệt hoá (H2 ROI-weighted loss hoặc H3 domain-aware TGM) đóng góp vượt trên fine-tuning thuần (H1).
-**Current focus:** Phase 1 — Khung xương end-to-end tối thiểu + vá lỗi chặn
+**Current focus:** Phase 2 — Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline
 
 ## Current Position
 
-Phase: 1 (Khung xương end-to-end tối thiểu + vá lỗi chặn) — HUMAN VERIFICATION
-Plan: 2/2 complete
-Status: Awaiting one Colab session running Bước 1→10 (closeout now measures steady throughput and real CU)
+Phase: 2 (Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline) — EXECUTING
+Plan: 0/6 complete (kế hoạch ở `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
+Status: Phase 1 hoàn thành 04/10/2026 (14/14, closeout thật trên L4). Còn 73,00 CU.
+Nhánh: `ver2` = bằng chứng Phase 1 (chưa merge vào `main`); Phase 2 làm trên nhánh `phase2` tách từ `ver2`.
 Last activity: 2026-09-16 - Completed quick task 260916-sxk: Bước 1 fine-tune camera trap (manifest dữ liệu + downloader + split_check)
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -70,6 +71,7 @@ Progress: [░░░░░░░░░░] 0%
 - [2026-10-04]: Chỉ dùng một kế hoạch là khung GSD; xoá `CAMERA_TRAP_FINE_TUNING_PLAN.md`; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 - [2026-10-04]: Bài so sánh ngoài chưa chốt ⇒ đánh giá độc lập với bài so sánh (ROADMAP G-1..G-5): H1 chính là một model chung cho 20 site (thay cho model riêng từng site của quyết định 24/09); đo end-to-end ở độ phân giải gốc với độ phân giải xử lý mặc định cạnh dài 1024; λ = 2/8/32 + núm giải mã; tập dev từ validation, test chạy một lần; lưu toàn bộ bitstream + ảnh tái tạo; đa chỉ số; baseline phổ quát. Requirement mới: EVAL-11..16, H1-05, H1-06, ANLS-09.
 - [2026-10-04]: Thêm hai cải tiến chỉ ở encode/decode, không train: ép xám ảnh đêm khi giải mã (H3-09) và chọn bitrate theo nội dung bằng MegaDetector ở encoder (H3-10), gộp thành cấu hình B5. Ảnh nền tham chiếu theo site (V2-09) và fine-tune riêng từng site lớn (V2-10) đưa vào v2. Tổng 70 requirement v1.
+- [2026-10-04]: Phase 1 đóng với số đo thật: 5,53 s/optimizer step, ~1 CU chi phí cố định mỗi phiên Colab, 1,37 CU cho phiên closeout. Ngày/đêm theo giờ lệch ảnh xám IR ở 9/100 ảnh ⇒ Phase 2 xác định đêm theo ảnh xám.
 - [Roadmap]: Sửa số liệu Coverage trong REQUIREMENTS.md — file có 59 requirement v1 có ID cụ thể, không phải 52 như dòng tổng ghi lúc định nghĩa requirements.
 
 ### Pending Todos
