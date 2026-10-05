@@ -129,6 +129,8 @@ def main(argv=None) -> int:
     parser.add_argument("--illumination-sidecar", default="data/manifests/kgalagadi_illumination.jsonl")
     parser.add_argument("--gt", required=True, help="MegaDetector sidecar on the original frames")
     parser.add_argument("--pred", required=True, help="MegaDetector sidecar on the reconstructions")
+    parser.add_argument("--archived-only", action="store_true",
+                        help="score only the images present in --pred (a partial decode archive)")
     parser.add_argument("--gt-threshold", type=float, default=0.2, help="pseudo ground-truth confidence (DATA-06)")
     parser.add_argument("--threshold", type=float, default=0.2, help="detection threshold for the rates")
     parser.add_argument("--bootstrap-resamples", type=int, default=200)
@@ -146,6 +148,8 @@ def main(argv=None) -> int:
     rows = load_rows(args.manifest, args.split, args.dev_list or None, None)
     apply_sidecar(rows, load_sidecar(args.illumination_sidecar))
     gt, pred = load_detections(args.gt), load_detections(args.pred)
+    if args.archived_only:
+        rows = [row for row in rows if row["image_id"] in pred]
     missing = [row["image_id"] for row in rows if row["image_id"] not in gt or row["image_id"] not in pred]
     if missing:
         raise ValueError(f"{len(missing)} images lack detections, e.g. {missing[:3]}")

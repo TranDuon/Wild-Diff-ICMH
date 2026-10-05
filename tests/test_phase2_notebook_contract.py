@@ -46,3 +46,15 @@ def test_all_methods_share_one_evaluator_and_detector():
                  "tools/baselines/run_classical.py", "tools/baselines/run_compressai_zoo.py",
                  "tools/data/label_illumination.py", "tools/data/build_dev_set.py"):
         assert tool in code
+
+
+def test_partial_archives_are_scored_on_what_they_hold_and_rescored_when_they_grow():
+    code = _code()
+    assert code.count("'--archived-only'") == 3
+    assert "json.loads(done_marker.read_text())['images'] >= archived" in code
+
+
+def test_timing_probe_runs_once_per_project_not_per_session():
+    code = _code()
+    assert "PROBE_FILE = P2 / 'probe_timing.json'" in code
+    assert "if str(side) not in probe_seconds:" in code

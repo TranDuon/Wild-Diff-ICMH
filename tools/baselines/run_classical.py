@@ -54,6 +54,24 @@ def decode(payload: bytes) -> Image.Image:
         return image.convert("RGB")
 
 
+def archived_paths(archive_root) -> set[str]:
+    """Relative paths with a complete record in ``<archive>/decode_log.jsonl``.
+
+    A decode run may cover only part of the dev set (``--limit``) or have been
+    interrupted; evaluation then scores exactly the archived images.
+    """
+    log = Path(archive_root) / "decode_log.jsonl"
+    if not log.is_file():
+        raise FileNotFoundError(f"no decode_log.jsonl in {archive_root}")
+    paths = set()
+    for line in log.read_text(encoding="utf-8").splitlines():
+        try:
+            paths.add(json.loads(line)["relative_path"])
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return paths
+
+
 def load_rows(manifest: str, split: str, dev_list: str | None, limit: int | None) -> list[dict]:
     rows = [json.loads(line) for line in Path(manifest).read_text(encoding="utf-8").splitlines() if line.strip()]
     rows = [row for row in rows if row.get("split") == split]

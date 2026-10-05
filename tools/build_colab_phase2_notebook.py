@@ -281,7 +281,8 @@ cells = [
         ## P2-6 — Đo thời gian decode B0 và dự báo chi phí P2-7
 
         Decode 3 ảnh dev bằng B0 λ=2 ở cạnh dài 1024 và 512, đọc `decode_log.jsonl`, rồi dự báo giờ GPU
-        và CU cho P2-7. Chọn `B0_SIDE`, `B0_LIMIT` ở P2-7 theo bảng in ra.
+        và CU cho P2-7. Chọn `B0_SIDE`, `B0_LIMIT` ở P2-7 theo bảng in ra. Kết quả đo lưu vào
+        `phase2/probe_timing.json`; các phiên sau chỉ in lại, không decode thử nữa.
         """
     ),
     code(
@@ -303,13 +304,19 @@ cells = [
             return command + B0_OVERRIDES
 
         n_dev = len(dev_ids(DEV_LIST))
+        PROBE_FILE = P2 / 'probe_timing.json'
+        probe_seconds = json.loads(PROBE_FILE.read_text()) if PROBE_FILE.is_file() else {}
         for side in (1024, 512):
-            probe = Path('/content/p2_probe') / f'ls{side}'
-            run_logged(b0_command(2, side, probe, limit=3), f'p2_probe_ls{side}.log', echo=False)
-            records = [json.loads(line) for line in (probe / 'decode_log.jsonl').read_text().splitlines()]
-            seconds = sum(r['encode_seconds'] + r['decode_seconds'] for r in records[1:]) / max(1, len(records) - 1)
+            if str(side) not in probe_seconds:
+                probe = Path('/content/p2_probe') / f'ls{side}'
+                run_logged(b0_command(2, side, probe, limit=3), f'p2_probe_ls{side}.log', echo=False)
+                records = [json.loads(line) for line in (probe / 'decode_log.jsonl').read_text().splitlines()]
+                timed = records[1:] or records  # the first image includes CUDA warm-up
+                probe_seconds[str(side)] = sum(r['encode_seconds'] + r['decode_seconds'] for r in timed) / len(timed)
+                PROBE_FILE.write_text(json.dumps(probe_seconds, indent=2))
+            seconds = probe_seconds[str(side)]
             hours = seconds * n_dev * len(LAMBDAS) / 3600
-            print(f'cạnh dài {side}: {seconds:.1f} s/ảnh (bỏ ảnh đầu khởi động) '
+            print(f'cạnh dài {side}: {seconds:.1f} s/ảnh '
                   f'→ {n_dev} ảnh × {len(LAMBDAS)} λ ≈ {hours:.2f} giờ ≈ {hours * COLAB_CU_PER_HOUR:.2f} CU')
         """
     ),
@@ -400,7 +407,8 @@ cells = [
         Với mỗi `phase2/archive/<đường>/<điểm>/`: chỉ số ảnh (PSNR, SSIM ×2, MS-SSIM, LPIPS, DISTS, bpp,
         compression ratio, thời gian) + MegaDetector trên ảnh tái tạo → mAP, ảnh rỗng báo nhầm, ảo giác,
         mất con vật. Tất cả ghi vào `results/results.jsonl` với `exp_id = p2dev_<đường>__<điểm>`.
-        Kho đã chấm thì bỏ qua.
+        Chỉ chấm đúng các ảnh đã có trong kho (`decode_log.jsonl`); kho đã chấm thì bỏ qua, trừ khi kho
+        có thêm ảnh từ sau lần chấm trước (ví dụ P2-7 chạy tiếp sau khi bị ngắt) — khi đó chấm lại.
         """
     ),
     code(
@@ -416,8 +424,10 @@ cells = [
             name = f'{curve}__{point}'
             image_eval = EVAL_DIR / f'{name}.jsonl'
             machine_eval = EVAL_DIR / f'{name}.machine.json'
-            if machine_eval.is_file():
-                print('Đã chấm:', name)
+            archived = sum(1 for line in (root / 'decode_log.jsonl').read_text().splitlines() if line.strip())
+            done_marker = EVAL_DIR / f'{name}.done.json'
+            if done_marker.is_file() and json.loads(done_marker.read_text())['images'] >= archived:
+                print('Đã chấm:', name, f'({archived} ảnh)')
                 continue
             info = json.loads(run_info.read_text())
             common = ['--manifest', MANIFEST, '--split', 'val', '--dev-list', DEV_LIST,
@@ -425,7 +435,7 @@ cells = [
             run_logged([
                 sys.executable, '-u', 'tools/evaluate_kgalagadi.py', *common,
                 '--data-root', LOCAL_IMAGES, '--reconstruction-root', root,
-                '--detections', DETECTIONS, '--method', curve, '--lpips', '--dists',
+                '--detections', DETECTIONS, '--method', curve, '--lpips', '--dists', '--archived-only',
                 '--output', image_eval, '--results-registry', RESULTS_REGISTRY,
                 '--exp-id', f'p2dev_{name}', '--lambda-rate', point,
                 '--ddim-steps', info.get('steps', 0),
@@ -433,16 +443,17 @@ cells = [
             predictions = DETECTIONS.parent / f'{name}.jsonl'
             run_logged([
                 DETECT_PY, '-u', 'tools/detect/run_megadetector.py', '--manifest', MANIFEST,
-                '--split', 'val', '--dev-list', DEV_LIST, '--image-root', root, '--suffix', '.png',
+                '--split', 'val', '--dev-list', DEV_LIST, '--image-root', root, '--suffix', '.png', '--archived-only',
                 '--output', predictions,
             ], f'p2_megadetector_{name}.log', echo=False)
             run_logged([
                 sys.executable, '-u', 'tools/eval_machine.py', *common,
-                '--gt', DETECTIONS, '--pred', predictions, '--output', machine_eval,
+                '--gt', DETECTIONS, '--pred', predictions, '--output', machine_eval, '--archived-only',
                 '--results-registry', RESULTS_REGISTRY, '--exp-id', f'p2dev_{name}',
                 '--method', curve, '--lambda-rate', point, '--ddim-steps', info.get('steps', 0),
             ], f'p2_machine_{name}.log', echo=False)
-            print('Đã chấm:', name)
+            done_marker.write_text(json.dumps({'images': archived}))
+            print('Đã chấm:', name, f'({archived} ảnh)')
         """
     ),
     markdown(

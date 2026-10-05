@@ -35,6 +35,7 @@ from utils.illumination import RULES as ILLUMINATION_RULES, apply_sidecar, load_
 from utils.image_geometry import center_crop_boxes, center_crop_image, resolve_geometry
 from utils.metrics import LPIPS, compute_psnr, compute_ssim, compute_ssim_masked
 from utils.results_registry import REGISTRY_METRICS, metric_rows, upsert_jsonl
+from tools.baselines.run_classical import archived_paths
 
 PER_IMAGE_METRICS = (
     "psnr", "ssim", "ssim_fullres", "ms_ssim", "foreground_ssim", "lpips", "dists",
@@ -157,6 +158,10 @@ def main(argv=None):
         help="smoke protocol only: apply the same center crop used during decoding. "
              "Without it, reconstructions must be at the original resolution (EVAL-11)",
     )
+    parser.add_argument(
+        "--archived-only", action="store_true",
+        help="score only the images listed in <reconstruction-root>/decode_log.jsonl",
+    )
     parser.add_argument("--min-detection-confidence", type=float, default=0.2)
     parser.add_argument("--lpips", action="store_true")
     parser.add_argument("--dists", action="store_true")
@@ -185,6 +190,9 @@ def main(argv=None):
 
     assert_no_leakage([Path(args.manifest)], build_info=args.build_info)
     rows = _load_rows(args.manifest, args.split, args.site_id, args.dev_list)
+    if args.archived_only:
+        archived = archived_paths(args.reconstruction_root)
+        rows = [row for row in rows if row["relative_path"] in archived]
     if args.limit is not None:
         rows = rows[:args.limit]
     if not rows:

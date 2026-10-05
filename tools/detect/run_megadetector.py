@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.baselines.run_classical import load_rows  # noqa: E402
+from tools.baselines.run_classical import archived_paths, load_rows  # noqa: E402
 
 DEFAULT_VERSION = "MDV6-yolov9-e"
 
@@ -67,6 +67,8 @@ def main(argv=None) -> int:
     parser.add_argument("--min-conf", type=float, default=0.01)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--archived-only", action="store_true",
+                        help="detect only images listed in <image-root>/decode_log.jsonl")
     args = parser.parse_args(argv)
 
     import numpy as np
@@ -79,6 +81,9 @@ def main(argv=None) -> int:
         rows = [json.loads(line) for line in Path(args.manifest).read_text(encoding="utf-8").splitlines() if line.strip()]
         rows.sort(key=lambda row: row["image_id"])
         rows = rows[:args.limit] if args.limit else rows
+    if args.archived_only:
+        archived = archived_paths(args.image_root)
+        rows = [row for row in rows if row["relative_path"] in archived]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     done = set()
