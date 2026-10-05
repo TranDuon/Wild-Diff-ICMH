@@ -73,3 +73,11 @@ def test_b0_subsets_are_seeded_random_not_first_by_name():
     assert "hashlib.sha256(f'20261005:{i}'.encode())" in code
     assert "limit=B0_LIMIT" not in code
     assert "(512, LAMBDAS, 100)" in code
+
+
+def test_each_archive_is_scored_on_the_dev_list_it_was_decoded_for():
+    code = _code()
+    assert "archive_dev = info.get('dev_list') or DEV_LIST" in code
+    assert "'--dev-list', DEV_LIST, '--image-root', root" not in code
+    source = (ROOT / "inference_partition.py").read_text(encoding="utf-8")
+    assert "'dev_list': os.path.abspath(args.dev_list) if args.dev_list else None" in source

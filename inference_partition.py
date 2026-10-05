@@ -411,6 +411,7 @@ def _write_run_info(args: Namespace, model_config) -> None:
         'manifest': args.manifest,
         'split': args.split,
         'site_id': args.site_id,
+        'dev_list': os.path.abspath(args.dev_list) if args.dev_list else None,
         'overrides': list(args.overrides or []),
     }
     path = os.path.join(args.output, 'run_info.json')

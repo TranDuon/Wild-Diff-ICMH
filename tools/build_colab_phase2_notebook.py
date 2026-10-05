@@ -472,7 +472,10 @@ cells = [
                 print('Đã chấm:', name, f'({archived} ảnh)')
                 continue
             info = json.loads(run_info.read_text())
-            common = ['--manifest', MANIFEST, '--split', 'val', '--dev-list', DEV_LIST,
+            # Score the image set this archive was asked for (a B0 subset), never
+            # leftovers of an earlier, differently sized run in the same folder.
+            archive_dev = info.get('dev_list') or DEV_LIST
+            common = ['--manifest', MANIFEST, '--split', 'val', '--dev-list', archive_dev,
                       '--illumination-sidecar', ILLUMINATION]
             run_logged([
                 sys.executable, '-u', 'tools/evaluate_kgalagadi.py', *common,
@@ -485,7 +488,7 @@ cells = [
             predictions = DETECTIONS.parent / f'{name}.jsonl'
             run_logged([
                 DETECT_PY, '-u', 'tools/detect/run_megadetector.py', '--manifest', MANIFEST,
-                '--split', 'val', '--dev-list', DEV_LIST, '--image-root', root, '--suffix', '.png', '--archived-only',
+                '--split', 'val', '--dev-list', archive_dev, '--image-root', root, '--suffix', '.png', '--archived-only',
                 '--output', predictions,
             ], f'p2_megadetector_{name}.log', echo=False)
             run_logged([
