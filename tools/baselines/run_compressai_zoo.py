@@ -81,7 +81,6 @@ def main(argv=None) -> int:
 
     torch.backends.cudnn.deterministic = True
     compressai.set_entropy_coder("ans")
-    net = zoo[args.model](quality=args.quality, metric=args.metric, pretrained=True).eval().to(args.device)
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -116,7 +115,12 @@ def main(argv=None) -> int:
             torch.cuda.synchronize()
         return time.perf_counter()
 
-    rows = load_rows(args.manifest, args.split, args.dev_list, args.limit)
+    rows = [row for row in load_rows(args.manifest, args.split, args.dev_list, args.limit)
+            if row["relative_path"] not in done]
+    print(f"{len(done)} already coded, {len(rows)} to code", flush=True)
+    if not rows:
+        return 0  # nothing left: do not download or load the model
+    net = zoo[args.model](quality=args.quality, metric=args.metric, pretrained=True).eval().to(args.device)
     with log_path.open("a", encoding="utf-8", newline="\n") as log, torch.no_grad():
         for index, row in enumerate(rows, 1):
             relative = row["relative_path"]
