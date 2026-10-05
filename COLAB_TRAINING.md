@@ -133,19 +133,21 @@ MyDrive/wild_diff_icmh/
 - Gửi lại: `results/phase1_metadata_<site>.json`, `results/phase1_closeout_<site>.json` và
   `throughput.json` trong run dir.
 
-## Phase 2 (`Wild_Diff_ICMH_Phase2_Eval.ipynb`)
+## Phase 2 — hai notebook, mỗi notebook một luồng chạy từ trên xuống
 
-- Mọi output nằm ở `MyDrive/wild_diff_icmh/phase2/` (sidecar ngày/đêm, `kgalagadi_dev.txt`,
-  `detections/`, `archive/<đường>/<điểm>/`, `eval/`, `rd_dev.png`, `sessions.jsonl`). Không ghi gì vào
-  thư mục repo trên Colab, để Bước 2A vẫn pull được.
-- Tập dev chỉ tạo một lần; các lần sau P2-2 tạo lại vào file tạm và báo lỗi nếu khác.
-- MegaDetector chạy trong venv riêng `/content/envs/detect` (`--system-site-packages`, cài
-  `PytorchWildlife`), không cài vào môi trường codec.
-- **P2-7 (decode B0) chỉ chạy khi đặt `RUN_B0 = True`**, sau khi đọc dự báo giờ/CU ở P2-6; giảm
-  `B0_LIMIT` nếu vượt ngân sách Phase 2 (≤ 8 CU).
-- Thiếu ảnh (Phase 1 chỉ cần A01) thì P2-0b tải bù vào Drive; nếu thiếu nhiều, chạy cell đó trên runtime
-  CPU trước.
-- Kết thúc phiên: điền `CU_AVAILABLE_NOW` ở P2-12 để ghi CU đo thật vào `phase2/sessions.jsonl`.
+- `Wild_Diff_ICMH_Phase2_Prepare.ipynb` (**đã xong 05–06/10**, chỉ để tái lập): nhãn ngày/đêm, tập dev,
+  MegaDetector trên 10.222 ảnh gốc, thống kê miền, RAM++ tags cho 20 site, decode B0. Cần đủ ảnh và
+  checkpoint (Bước 4–5). P2-7 (decode B0) chỉ chạy khi đặt `RUN_B0 = True`.
+- `Wild_Diff_ICMH_Phase2_Eval.ipynb` (**chạy bây giờ**): Bước 1 → 11, không bỏ cell nào. Chỉ chép 300 ảnh dev,
+  kiểm tra đầu ra của Prepare và in số ảnh B0 đã decode, rồi baseline → chấm điểm → đồ thị RD → tóm tắt → CU.
+- Output ở `MyDrive/wild_diff_icmh/phase2/` (sidecar ngày/đêm, `kgalagadi_dev.txt`, `detections/`,
+  `archive/B0_*`, `bitstreams/`, `eval/`, `rd_dev.png`, `sessions.jsonl`). Không ghi gì vào thư mục repo
+  trên Colab.
+- **Không ghi ảnh baseline lên Drive** (ghi hàng chục GB làm Colab bị chặn "Google Drive quota exceeded"):
+  ảnh baseline nằm ở `/content/p2_baselines`, chấm xong thì chỉ gói bitstream thành `.tar` lên Drive.
+- MegaDetector chạy trong venv riêng `/content/envs/detect` (virtualenv, `--system-site-packages`,
+  `huggingface-hub` ghim theo bản của Colab), không cài vào môi trường codec.
+- Runtime ngắt giữa chừng: chạy lại từ Bước 1; điểm đã chấm không nén/chấm lại.
 
 ## Compute unit
 
