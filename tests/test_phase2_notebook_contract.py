@@ -90,3 +90,15 @@ def test_baseline_reconstructions_stay_off_drive():
     assert "ARCHIVE / curve / f'q{quality}'" not in code
     assert "ARCHIVE.glob('B0_*/*/run_info.json')" in code
     assert "pack_bitstreams(root, curve, point)" in code
+
+
+def test_shortcut_cell_reaches_baselines_without_full_setup():
+    cells = [cell["source"] for cell in _notebook()["cells"]]
+    shortcut = next(index for index, source in enumerate(cells) if "Ảnh dev cục bộ" in source)
+    p2_8 = next(index for index, source in enumerate(cells) if "def run_classical" in source)
+    assert shortcut < p2_8
+    source = cells[shortcut]
+    assert "def run_logged" in source and "DETECT_READY.touch()" in source
+    assert "def scored" in source and "def dev_ids" in source
+    assert "Đường tắt cần" in source
+    assert not any("__RUN_LOGGED__" in c or "__DETECT_ENV__" in c for c in cells)

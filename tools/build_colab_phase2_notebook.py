@@ -9,12 +9,55 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from textwrap import dedent
 
 from build_colab_training_notebook import cells as TRAINING_CELLS, code, markdown
 
 BRANCH_LINE_TRAINING = "BRANCH = 'phase2'  # test branch; set back to 'main' when merging"
 BRANCH_LINE_PHASE2 = "BRANCH = 'phase2'  # Phase 2 branch; set back to 'main' when merging"
 
+
+
+# Code shared by several cells (inserted where a cell holds the placeholder).
+SNIPPETS = {
+    "__RUN_LOGGED__": dedent("""
+        def run_logged(command, log_name, echo=True):
+            log_path = DRIVE_ROOT / 'logs' / log_name
+            command = [str(part) for part in command]
+            print('$', ' '.join(command))
+            with log_path.open('a', encoding='utf-8') as log_stream:
+                process = subprocess.Popen(
+                    command, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1,
+                )
+                for line in process.stdout:
+                    if echo:
+                        print(line, end='')
+                    log_stream.write(line)
+                return_code = process.wait()
+            if return_code:
+                raise RuntimeError(f'{log_name}: dừng với mã {return_code}; log đầy đủ: {log_path}')
+    """).strip(),
+    "__DETECT_ENV__": dedent("""
+        # Colab's Python has no ensurepip, so ``python -m venv`` cannot install pip;
+        # virtualenv ships its own.  --system-site-packages reuses Colab's torch.
+        DETECT_ENV = Path('/content/envs/detect')
+        DETECT_PY = DETECT_ENV / 'bin' / 'python'
+        DETECT_READY = DETECT_ENV / '.ready'
+        if not DETECT_READY.exists():
+            shutil.rmtree(DETECT_ENV, ignore_errors=True)  # leftovers of a failed attempt
+            run_logged([sys.executable, '-m', 'pip', 'install', '-q', 'virtualenv'], 'p2_detect_env.log')
+            run_logged([sys.executable, '-m', 'virtualenv', '--system-site-packages', DETECT_ENV], 'p2_detect_env.log')
+            # The env also sees Colab's transformers, which needs Colab's
+            # huggingface-hub (<1.0); PytorchWildlife's deps would otherwise pull 1.x.
+            import importlib.metadata
+            hub_pin = f"huggingface-hub=={importlib.metadata.version('huggingface_hub')}"
+            run_logged([DETECT_PY, '-m', 'pip', 'install', '-q', 'PytorchWildlife', hub_pin], 'p2_detect_env.log')
+            run_logged([DETECT_PY, '-c', 'from PytorchWildlife.models import detection; print("PytorchWildlife OK")'],
+                       'p2_detect_env.log')
+            DETECT_READY.touch()
+    """).strip(),
+}
 
 def _reused(prefixes):
     """Markdown heading cell + its code cell for every heading prefix, in order."""
@@ -101,22 +144,7 @@ cells = [
             folder.mkdir(parents=True, exist_ok=True)
 
 
-        def run_logged(command, log_name, echo=True):
-            log_path = DRIVE_ROOT / 'logs' / log_name
-            command = [str(part) for part in command]
-            print('$', ' '.join(command))
-            with log_path.open('a', encoding='utf-8') as log_stream:
-                process = subprocess.Popen(
-                    command, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1,
-                )
-                for line in process.stdout:
-                    if echo:
-                        print(line, end='')
-                    log_stream.write(line)
-                return_code = process.wait()
-            if return_code:
-                raise RuntimeError(f'{log_name}: dừng với mã {return_code}; log đầy đủ: {log_path}')
+        __RUN_LOGGED__
 
 
         def author_checkpoint(lam):
@@ -226,23 +254,7 @@ cells = [
     ),
     code(
         """
-        # Colab's Python has no ensurepip, so ``python -m venv`` cannot install pip;
-        # virtualenv ships its own.  --system-site-packages reuses Colab's torch.
-        DETECT_ENV = Path('/content/envs/detect')
-        DETECT_PY = DETECT_ENV / 'bin' / 'python'
-        DETECT_READY = DETECT_ENV / '.ready'
-        if not DETECT_READY.exists():
-            shutil.rmtree(DETECT_ENV, ignore_errors=True)  # leftovers of a failed attempt
-            run_logged([sys.executable, '-m', 'pip', 'install', '-q', 'virtualenv'], 'p2_detect_env.log')
-            run_logged([sys.executable, '-m', 'virtualenv', '--system-site-packages', DETECT_ENV], 'p2_detect_env.log')
-            # The env also sees Colab's transformers, which needs Colab's
-            # huggingface-hub (<1.0); PytorchWildlife's deps would otherwise pull 1.x.
-            import importlib.metadata
-            hub_pin = f"huggingface-hub=={importlib.metadata.version('huggingface_hub')}"
-            run_logged([DETECT_PY, '-m', 'pip', 'install', '-q', 'PytorchWildlife', hub_pin], 'p2_detect_env.log')
-            run_logged([DETECT_PY, '-c', 'from PytorchWildlife.models import detection; print("PytorchWildlife OK")'],
-                       'p2_detect_env.log')
-            DETECT_READY.touch()
+        __DETECT_ENV__
 
         run_logged([
             DETECT_PY, '-u', 'tools/detect/run_megadetector.py', '--manifest', MANIFEST,
@@ -390,6 +402,73 @@ cells = [
     ),
     markdown(
         """
+        ## ⏩ Đường tắt tới P2-8 / P2-9 / P2-10 / P2-11
+
+        Khi P2-1, P2-2, P2-3 (và P2-7 nếu cần chấm B0) **đã xong ở phiên trước**, runtime mới không phải chạy
+        Bước 4, Bước 5 và P2-0 → P2-7 (chép 9 GB ảnh và hàng chục GB checkpoint). Chỉ chạy:
+
+        **Bước 1 → Bước 2 → Bước 3 → cell này**, rồi nhảy thẳng tới P2-8 (hoặc P2-9, P2-10…).
+
+        Cell này chỉ chép **300 ảnh dev** (~250 MB) từ Drive, đặt lại các biến dùng chung và dựng môi trường
+        MegaDetector. Nếu chạy notebook từ trên xuống bình thường, cell này không làm gì thêm.
+        """
+    ),
+    code(
+        """
+        import json
+        import shutil
+        from concurrent.futures import ThreadPoolExecutor
+
+        import torch
+
+        DRIVE_ROOT = Path('/content/drive/MyDrive/wild_diff_icmh')
+        LOCAL_IMAGES = Path('/content/data/wild_diff_icmh/images')
+        P2 = DRIVE_ROOT / 'phase2'
+        MANIFEST = 'data/manifests/kgalagadi_site_split.jsonl'
+        ILLUMINATION = P2 / 'kgalagadi_illumination.jsonl'
+        DEV_LIST = P2 / 'kgalagadi_dev.txt'
+        DETECTIONS = P2 / 'detections' / 'originals.jsonl'
+        ARCHIVE = P2 / 'archive'
+        BASELINE_ROOT = Path('/content/p2_baselines')
+        BITSTREAMS = P2 / 'bitstreams'
+        EVAL_DIR = P2 / 'eval'
+        RESULTS_REGISTRY = DRIVE_ROOT / 'results' / 'results.jsonl'
+        for folder in (EVAL_DIR, BITSTREAMS, BASELINE_ROOT, DRIVE_ROOT / 'logs'):
+            folder.mkdir(parents=True, exist_ok=True)
+        for needed, step in ((ILLUMINATION, 'P2-1'), (DEV_LIST, 'P2-2'), (DETECTIONS, 'P2-3')):
+            assert needed.is_file(), f'Đường tắt cần {step} đã xong: chưa có {needed}'
+
+        __RUN_LOGGED__
+
+
+        def dev_ids(path):
+            return [line for line in Path(path).read_text().splitlines() if line and not line.startswith('#')]
+
+
+        def scored(curve, point):
+            return (EVAL_DIR / f'{curve}__{point}.done.json').is_file()
+
+
+        wanted = set(dev_ids(DEV_LIST))
+        rows = [json.loads(line) for line in (REPO / MANIFEST).read_text(encoding='utf-8').splitlines() if line.strip()]
+        to_copy = [row['relative_path'] for row in rows
+                   if row['image_id'] in wanted and not (LOCAL_IMAGES / row['relative_path']).is_file()]
+
+        def copy_dev_image(relative):
+            target = LOCAL_IMAGES / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(DRIVE_ROOT / 'images' / relative, target)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(copy_dev_image, to_copy))
+        print(f'Ảnh dev cục bộ: {len(wanted)} (vừa chép {len(to_copy)})')
+
+        __DETECT_ENV__
+        print('Sẵn sàng cho P2-8 → P2-11.')
+        """
+    ),
+    markdown(
+        """
         ## P2-8 — Baseline JPEG / WebP (CPU, chạy song song 4 tiến trình)
 
         JPEG ở độ phân giải gốc, ở cạnh dài 1024 và 512; WebP ở 1024 và 512. Cùng giao thức: ảnh gốc vào, ảnh gốc ra.
@@ -410,6 +489,7 @@ cells = [
 
         def scored(curve, point):
             return (EVAL_DIR / f'{curve}__{point}.done.json').is_file()
+
 
         def run_classical(job):
             codec, quality, side = job
@@ -604,6 +684,12 @@ cells = [
         """
     ),
 ]
+
+for cell in cells:
+    if cell["cell_type"] == "code":
+        for placeholder, snippet in SNIPPETS.items():
+            if placeholder in cell["source"]:
+                cell["source"] = cell["source"].replace(placeholder, snippet)
 
 notebook = {
     "cells": cells,
