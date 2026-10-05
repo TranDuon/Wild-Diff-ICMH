@@ -302,13 +302,13 @@ cells = [
         """
         COLAB_CU_PER_HOUR = 1.54
 
-        def b0_command(lam, side, output, limit=None):
+        def b0_command(lam, side, output, limit=None, dev_list=None):
             command = [
                 sys.executable, '-u', 'inference_partition.py',
                 '--ckpt_sd', SD_CKPT, '--ckpt_lc', B0_CKPT[lam],
                 '--config', 'configs/model/diffeic.yaml',
                 '--input', LOCAL_IMAGES, '--output', output,
-                '--manifest', MANIFEST, '--split', 'val', '--dev-list', DEV_LIST,
+                '--manifest', MANIFEST, '--split', 'val', '--dev-list', dev_list or DEV_LIST,
                 '--tag-cache', TAGS_ALL, '--sampler', 'ddim', '--steps', DDIM_STEPS,
                 '--device', 'cuda', '--processing-long-side', side, '--skip-existing',
             ]
@@ -337,39 +337,68 @@ cells = [
         """
         ## P2-7 — Decode B0 trên tập dev (tốn GPU nhất)
 
-        Đọc dự báo ở P2-6, chỉnh `B0_SIDE` / `B0_LIMIT` cho vừa ngân sách, rồi đặt `RUN_B0 = True`.
-        Kho lưu trữ: `phase2/archive/B0_ls<side>_ddim<steps>/lambda_<λ>/`. Ngắt giữa chừng thì chạy lại
-        cell — ảnh đã decode được bỏ qua (`--skip-existing`), mỗi ảnh có seed riêng.
+        Đọc dự báo ở P2-6, chỉnh `B0_RUNS` cho vừa ngân sách, rồi đặt `RUN_B0 = True`. Mỗi dòng của
+        `B0_RUNS` là (cạnh dài, danh sách λ, số ảnh). Số ảnh < cả tập dev thì lấy **tập con ngẫu nhiên có
+        seed cố định** của tập dev (trải đều site, các tập con lồng nhau: 30 ảnh nằm trong 100 ảnh), không
+        lấy N ảnh đầu theo tên. Mặc định: 512 trên 100 ảnh × 3 λ, và 1024 trên 30 ảnh với λ=2 để so chất
+        lượng 512/1024 trên cùng ảnh. Kho: `phase2/archive/B0_ls<side>_ddim<steps>/lambda_<λ>/`.
+        Ngắt giữa chừng thì chạy lại cell — ảnh đã decode được bỏ qua, mỗi ảnh có seed riêng.
         """
     ),
     code(
         """
-        B0_SIDE = 1024
-        B0_LIMIT = None      # None = cả tập dev; ví dụ 100 nếu dự báo vượt ngân sách
-        RUN_B0 = False       # đặt True sau khi xem dự báo ở P2-6
+        import hashlib
+
+        B0_RUNS = [
+            (512, LAMBDAS, 100),   # (cạnh dài, các λ, số ảnh dev)
+            (1024, [2], 30),
+        ]
+        RUN_B0 = False       # đặt True sau khi xem dự báo bên dưới
+
+        def dev_subset(size):
+            ids = dev_ids(DEV_LIST)
+            if size >= len(ids):
+                return DEV_LIST
+            # Seeded hash order: a reproducible random sample; smaller subsets nest in larger ones.
+            chosen = sorted(ids, key=lambda i: hashlib.sha256(f'20261005:{i}'.encode()).hexdigest())[:size]
+            path = P2 / f'kgalagadi_dev_sub{size}.txt'
+            path.write_text('# random subset of kgalagadi_dev.txt, seed 20261005' + chr(10)
+                            + chr(10).join(sorted(chosen)) + chr(10))
+            return path
+
+        probe_seconds = json.loads((P2 / 'probe_timing.json').read_text())
+        total_hours = 0.0
+        for side, lambdas, size in B0_RUNS:
+            hours = probe_seconds[str(side)] * size * len(lambdas) / 3600
+            total_hours += hours
+            print(f'B0 cạnh {side}: {size} ảnh × λ {lambdas} ≈ {hours:.2f} giờ')
+        print(f'Tổng ≈ {total_hours:.2f} giờ ≈ {total_hours * COLAB_CU_PER_HOUR:.2f} CU (chưa trừ phần đã decode)')
 
         if not RUN_B0:
-            print('P2-7 chưa chạy: đặt RUN_B0 = True sau khi xem dự báo ở P2-6.')
+            print('P2-7 chưa chạy: đặt RUN_B0 = True nếu dự báo trên vừa ngân sách.')
         else:
-            for lam in LAMBDAS:
-                output = ARCHIVE / f'B0_ls{B0_SIDE}_ddim{DDIM_STEPS}' / f'lambda_{lam}'
-                run_logged(b0_command(lam, B0_SIDE, output, limit=B0_LIMIT), f'p2_b0_lambda{lam}.log', echo=False)
-                print('Xong B0 λ =', lam, '→', output)
+            for side, lambdas, size in B0_RUNS:
+                subset = dev_subset(size)
+                for lam in lambdas:
+                    output = ARCHIVE / f'B0_ls{side}_ddim{DDIM_STEPS}' / f'lambda_{lam}'
+                    run_logged(b0_command(lam, side, output, dev_list=subset),
+                               f'p2_b0_ls{side}_lambda{lam}.log', echo=False)
+                    print('Xong B0 cạnh', side, 'λ =', lam, '→', output)
         """
     ),
     markdown(
         """
         ## P2-8 — Baseline JPEG / WebP (CPU, chạy song song 4 tiến trình)
 
-        JPEG ở độ phân giải gốc và ở cạnh dài 1024; WebP ở 1024. Cùng giao thức: ảnh gốc vào, ảnh gốc ra.
+        JPEG ở độ phân giải gốc, ở cạnh dài 1024 và 512; WebP ở 1024 và 512. Cùng giao thức: ảnh gốc vào, ảnh gốc ra.
         """
     ),
     code(
         """
         CLASSICAL = (
             [('jpeg', q, None) for q in (5, 15, 40)]
-            + [('jpeg', q, 1024) for q in (5, 15, 40)]
-            + [('webp', q, 1024) for q in (5, 15, 40)]
+            + [('jpeg', q, side) for q in (5, 15, 40) for side in (1024, 512)]
+            + [('webp', q, side) for q in (5, 15, 40) for side in (1024, 512)]
         )
 
         def run_classical(job):
@@ -396,18 +425,18 @@ cells = [
         ## P2-9 — Baseline CompressAI (GPU, nhẹ)
 
         `bmshj2018-hyperprior` (họ codec của bài Xie 2025), `mbt2018`, `cheng2020-attn`, chất lượng 1–3,
-        ở cạnh dài 1024; entropy coding thật, bitstream ghi ra file.
+        ở cạnh dài 1024 và 512; entropy coding thật, bitstream ghi ra file.
         """
     ),
     code(
         """
         for model in ('bmshj2018-hyperprior', 'mbt2018', 'cheng2020-attn'):
-            for quality in (1, 2, 3):
-                curve = f'compressai-{model}_ls1024'
+            for quality, side in [(q, s) for q in (1, 2, 3) for s in (1024, 512)]:
+                curve = f'compressai-{model}_ls{side}'
                 run_logged([
                     sys.executable, '-u', 'tools/baselines/run_compressai_zoo.py', '--manifest', MANIFEST,
                     '--data-root', LOCAL_IMAGES, '--split', 'val', '--dev-list', DEV_LIST,
-                    '--model', model, '--quality', quality, '--processing-long-side', 1024,
+                    '--model', model, '--quality', quality, '--processing-long-side', side,
                     '--output', ARCHIVE / curve / f'q{quality}', '--skip-existing',
                 ], f'p2_{curve}_q{quality}.log', echo=False)
                 print('Xong', curve, 'q', quality)

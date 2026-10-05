@@ -66,3 +66,10 @@ def test_detector_env_does_not_depend_on_ensurepip():
     assert "'-m', 'virtualenv', '--system-site-packages'" in code
     assert "DETECT_READY.touch()" in code
     assert "'PytorchWildlife', hub_pin" in code
+
+
+def test_b0_subsets_are_seeded_random_not_first_by_name():
+    code = _code()
+    assert "hashlib.sha256(f'20261005:{i}'.encode())" in code
+    assert "limit=B0_LIMIT" not in code
+    assert "(512, LAMBDAS, 100)" in code
