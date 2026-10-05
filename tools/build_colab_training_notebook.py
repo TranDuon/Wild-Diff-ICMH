@@ -833,6 +833,7 @@ notebook = {
     "nbformat_minor": 5,
 }
 
-output = Path(__file__).resolve().parents[1] / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb"
-output.write_text(json.dumps(notebook, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print(output)
+if __name__ == "__main__":
+    output = Path(__file__).resolve().parents[1] / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb"
+    output.write_text(json.dumps(notebook, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(output)

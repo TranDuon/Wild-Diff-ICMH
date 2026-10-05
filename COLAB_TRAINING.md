@@ -1,7 +1,11 @@
 # Lưu ý vận hành Colab
 
-Notebook: `Wild_Diff_ICMH_Kgalagadi_Train.ipynb` (sinh từ `tools/build_colab_training_notebook.py`;
-muốn sửa cell thì sửa file sinh rồi chạy lại nó, không sửa tay notebook).
+Notebook:
+- `Wild_Diff_ICMH_Kgalagadi_Train.ipynb` — training (sinh từ `tools/build_colab_training_notebook.py`);
+- `Wild_Diff_ICMH_Phase2_Eval.ipynb` — Phase 2: nhãn ngày/đêm, tập dev, MegaDetector, B0, baseline,
+  chấm điểm (sinh từ `tools/build_colab_phase2_notebook.py`, dùng lại Bước 1–5 của notebook training).
+
+Muốn sửa cell thì sửa file sinh rồi chạy lại nó, không sửa tay notebook.
 
 File này **chỉ chứa lưu ý vận hành**. Giao thức thí nghiệm, phạm vi, ngân sách và tiêu chí
 nghiệm thu nằm duy nhất trong khung GSD: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
@@ -128,6 +132,20 @@ MyDrive/wild_diff_icmh/
   thời gian (`wall_clock_seconds_per_step`) để đối chiếu.
 - Gửi lại: `results/phase1_metadata_<site>.json`, `results/phase1_closeout_<site>.json` và
   `throughput.json` trong run dir.
+
+## Phase 2 (`Wild_Diff_ICMH_Phase2_Eval.ipynb`)
+
+- Mọi output nằm ở `MyDrive/wild_diff_icmh/phase2/` (sidecar ngày/đêm, `kgalagadi_dev.txt`,
+  `detections/`, `archive/<đường>/<điểm>/`, `eval/`, `rd_dev.png`, `sessions.jsonl`). Không ghi gì vào
+  thư mục repo trên Colab, để Bước 2A vẫn pull được.
+- Tập dev chỉ tạo một lần; các lần sau P2-2 tạo lại vào file tạm và báo lỗi nếu khác.
+- MegaDetector chạy trong venv riêng `/content/envs/detect` (`--system-site-packages`, cài
+  `PytorchWildlife`), không cài vào môi trường codec.
+- **P2-7 (decode B0) chỉ chạy khi đặt `RUN_B0 = True`**, sau khi đọc dự báo giờ/CU ở P2-6; giảm
+  `B0_LIMIT` nếu vượt ngân sách Phase 2 (≤ 8 CU).
+- Thiếu ảnh (Phase 1 chỉ cần A01) thì P2-0b tải bù vào Drive; nếu thiếu nhiều, chạy cell đó trên runtime
+  CPU trước.
+- Kết thúc phiên: điền `CU_AVAILABLE_NOW` ở P2-12 để ghi CU đo thật vào `phase2/sessions.jsonl`.
 
 ## Compute unit
 

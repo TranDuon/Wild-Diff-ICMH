@@ -1,0 +1,21 @@
+base: train_kgalagadi_colab.yaml
+
+# G-1 / H1-05: one H1 model fine-tuned on the train split of all 20 sites
+# (one run per lambda; BPP_WEIGHT selects the authors' checkpoint).  KGA_TAGS
+# must be the all-sites RAM++ cache.  KGA_DETECTIONS is optional: with it,
+# CropStatsMonitor logs how many crops contain an animal (INFRA-02); crops stay
+# uniform (bbox_crop_probability 0) so H1 is not ROI-aware.
+data:
+  params:
+    dataset_overrides:
+      site_id: null
+      detections_path: ${oc.env:KGA_DETECTIONS,null}
+      bbox_crop_probability: 0.0
+
+lightning:
+  trainer:
+    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h1_pooled/lambda_${oc.env:BPP_WEIGHT,2}}
+    # Provisional (ROADMAP budget, 05/10): ~3,000 optimizer steps per lambda
+    # = ~3.3 epochs of 7,191 train frames at 8 frames/step.  Fixed in Phase 3.
+    max_epochs: -1
+    max_steps: 3000

@@ -82,7 +82,7 @@ def code_one(source: Path, output_root: Path, relative: str, codec: str, quality
     stream = target.parent / "data" / target.stem
     stream.parent.mkdir(parents=True, exist_ok=True)
     stream.write_bytes(payload)
-    reconstruction.save(target)
+    reconstruction.save(target, compress_level=1)
     return {
         "relative_path": relative,
         "bitstream_bytes": len(payload),

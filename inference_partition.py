@@ -355,6 +355,10 @@ def parse_args() -> Namespace:
     )
     parser.add_argument('--split', choices=['train', 'val', 'test'], default=None)
     parser.add_argument('--site-id', default=None, help='e.g. KGA:A01; requires --manifest')
+    parser.add_argument(
+        '--dev-list', default=None,
+        help='frozen image_id list (EVAL-16); keeps only those manifest rows, requires --manifest',
+    )
     parser.add_argument('--tag-cache', default=None, help='JSONL produced by tools/precompute_ram_tags.py')
     parser.add_argument('--tag-vocabulary', default=None, help='optional restricted vocabulary for H3')
     parser.add_argument('--domain-metadata', action='store_true', help='transmit H3 illumination/season byte')
@@ -511,6 +515,13 @@ def main() -> None:
             if (args.split is None or row.get('split') == args.split)
             and (args.site_id is None or row.get('site_id') == args.site_id)
         ]
+        if args.dev_list:
+            with open(args.dev_list, 'r', encoding='utf-8') as stream:
+                wanted = {line.strip() for line in stream if line.strip() and not line.startswith('#')}
+            selected_rows = sorted(
+                (row for row in selected_rows if row['image_id'] in wanted),
+                key=lambda row: row['image_id'],
+            )
         if not selected_rows:
             raise ValueError('manifest filters selected no images')
         if args.domain_metadata:
@@ -527,8 +538,8 @@ def main() -> None:
             for key in (row.get('relative_path'), row.get('source_file_name')):
                 if key:
                     manifest_rows[str(key).replace('\\', '/')] = row
-    elif args.split or args.site_id:
-        raise ValueError('--split/--site-id require --manifest')
+    elif args.split or args.site_id or args.dev_list:
+        raise ValueError('--split/--site-id/--dev-list require --manifest')
 
     os.makedirs(args.output, exist_ok=True)
     decode_log_path = os.path.join(args.output, 'decode_log.jsonl')
@@ -645,7 +656,7 @@ def main() -> None:
             'lpips': lpips_value.item()
         })
         
-        pred_image.save(save_path)
+        pred_image.save(save_path, compress_level=1)  # lossless; level 1 is ~5x faster on 5 MP
         log_record = {
             'relative_path': relative_file_path,
             'image_id': row['image_id'] if manifest_rows is not None else None,

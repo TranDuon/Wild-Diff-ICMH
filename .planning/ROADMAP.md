@@ -106,7 +106,7 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   7. Vùng bitrate của B0 và các baseline được đặt chung một đồ thị để biết dải chồng lấn trước khi chọn λ cho H1.
 
 **Việc code cần làm trong phase này:** chế độ resize cạnh dài dùng chung cho dataset / `inference_partition.py` / `tools/evaluate_kgalagadi.py` (`utils/image_geometry.py`); script baseline JPEG/WebP và CompressAI zoo; mở rộng evaluator (MS-SSIM, DISTS, byte/ảnh, compression ratio trên ảnh gốc, thời gian) và schema registry; config H1 cho **mọi site** (hiện `KGA_SITE_ID` mặc định `KGA:A01`) + tag cache RAM++ cho cả 20 site.
-**Plans**: 6 plans — xem `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md` (02-01 giao thức độ phân giải gốc ✅ 05/10; 02-02 kho lưu trữ + evaluator + registry; 02-03 tập dev; 02-04 baseline phổ quát; 02-05 MegaDetector + thống kê miền + chỉ số máy; 02-06 chuẩn bị H1 chung + notebook Phase 2)
+**Plans**: 6 plans — xem `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md` — code xong 05/10 cho cả 6 plan (02-01 giao thức độ phân giải gốc; 02-02 evaluator đa chỉ số + bootstrap + registry; 02-03 tập dev; 02-04 baseline JPEG/WebP/CompressAI; 02-05 MegaDetector + chỉ số máy + thống kê miền; 02-06 config H1 chung + log crop + notebook Phase 2) và nhãn ngày/đêm theo nguồn sáng. **Còn:** chạy notebook Phase 2 trên Colab, đóng băng tập dev theo nhãn mới, SpeciesNet (EVAL-04), VTM/BPG để Phase 6
 **UI hint**: no
 
 ### Phase 3: H1 — Fine-tuning thích ứng miền
@@ -242,7 +242,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → (5 song song với 3 v�
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Khung xương end-to-end tối thiểu + vá lỗi chặn | 2/2 | Complete (14/14) | 2026-10-04 |
-| 2. Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline | 0/6 | In progress | - |
+| 2. Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline | 6/6 code | Chờ chạy notebook Phase 2 trên Colab | - |
 | 3. H1 — Fine-tuning thích ứng miền | 0/TBD | Not started (config + launcher theo site đã có) | - |
 | 4. H2 — ROI-weighted loss | 0/TBD | Not started (code V1 + config H1-control đã có, chưa train) | - |
 | 5. H3 — Domain-aware Tag Guidance Module | 0/TBD | Not started (bitstream tag/metadata đã có, chưa decode thật) | - |

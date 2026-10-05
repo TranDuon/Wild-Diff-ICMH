@@ -16,7 +16,7 @@ def test_decode_codes_downscaled_frame_and_saves_original_size():
     resize = main.index("resize_for_processing(img, args.processing_long_side)")
     pad = main.index("pad(np.array(coded), scale=64)")
     restore = main.index("restore_original_size(pred_image, img.size)")
-    save = main.index("pred_image.save(save_path)")
+    save = main.index("pred_image.save(save_path, compress_level=1)")
     assert resize < pad < restore < save
 
 

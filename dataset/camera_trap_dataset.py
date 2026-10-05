@@ -369,6 +369,10 @@ class CameraTrapDataset(data.Dataset):
             "hint": source.astype(np.float32),
             "txt": prompt,
             "roi_mask": roi_mask.astype(np.float32),
+            # INFRA-02: share of the crop covered by animal boxes; meaningful
+            # only when detections are loaded (``roi_known``).
+            "roi_fraction": np.float32(roi_mask.mean()),
+            "roi_known": np.float32(1.0 if self.detections else 0.0),
             "domain_metadata_bits": np.float32(self.domain_metadata_bits),
             "tag_payload_bits": np.float32(tag_payload_bits),
             "image_id": str(row["image_id"]),

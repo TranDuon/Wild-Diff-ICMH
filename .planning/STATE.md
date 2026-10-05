@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline
 status: executing
-stopped_at: Phase 2 plan 02-01 (original-resolution protocol)
+stopped_at: Phase 2 code complete; awaiting Colab run of Wild_Diff_ICMH_Phase2_Eval.ipynb
 last_updated: "2026-09-27T16:22:57.295Z"
 last_activity: 2026-09-27
 last_activity_desc: "Implemented Phase 1 metadata audit and Colab Bước 10 closeout; awaiting live artifact"
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 2 (Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline) — EXECUTING
-Plan: 0/6 complete (kế hoạch ở `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
+Plan: 6/6 code complete (05/10); chờ chạy `Wild_Diff_ICMH_Phase2_Eval.ipynb` trên Colab (kế hoạch: `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
 Status: Phase 1 hoàn thành 04/10/2026 (14/14, closeout thật trên L4). Còn 73,00 CU.
 Nhánh: `ver2` = bằng chứng Phase 1 (chưa merge vào `main`); Phase 2 làm trên nhánh `phase2` tách từ `ver2`.
 Last activity: 2026-09-16 - Completed quick task 260916-sxk: Bước 1 fine-tune camera trap (manifest dữ liệu + downloader + split_check)

@@ -21,7 +21,62 @@ __all__ = [
     "ModelCheckpoint",
     "ImageLogger",
     "ThroughputMonitor",
+    "CropStatsMonitor",
 ]
+
+
+class CropStatsMonitor(Callback):
+    """
+    INFRA-02: log how many training crops actually contain an animal.
+
+    Uses the ``roi_fraction``/``roi_known`` fields of ``CameraTrapDataset``;
+    nothing is logged when the run has no detection sidecar.  Writes
+    ``<default_root_dir>/<output_name>`` at the end of each ``fit``.
+    """
+
+    def __init__(self, output_name: str = "crop_stats.json", log_every_n_steps: int = 50) -> None:
+        super().__init__()
+        self.output_name = output_name
+        self.log_every_n_steps = int(log_every_n_steps)
+        self._crops = 0
+        self._with_animal = 0
+        self._coverage = 0.0
+
+    def on_train_batch_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule, outputs: STEP_OUTPUT,
+        batch: Any, batch_idx: int
+    ) -> None:
+        if not isinstance(batch, dict) or "roi_fraction" not in batch:
+            return
+        known = torch.as_tensor(batch.get("roi_known", 0.0)).float().flatten()
+        if known.numel() == 0 or float(known.max()) <= 0:
+            return
+        fraction = torch.as_tensor(batch["roi_fraction"]).float().flatten()
+        self._crops += int(fraction.numel())
+        self._with_animal += int((fraction > 0).sum())
+        self._coverage += float(fraction.sum())
+        if self._crops and trainer.global_step % self.log_every_n_steps == 0:
+            pl_module.log("train/crop_with_animal_ratio", self._with_animal / self._crops,
+                          on_step=True, on_epoch=False, prog_bar=False)
+
+    @rank_zero_only
+    def on_train_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if not self._crops:
+            return
+        report = {
+            "crops": self._crops,
+            "crops_with_animal": self._with_animal,
+            "crop_with_animal_ratio": self._with_animal / self._crops,
+            "mean_roi_fraction": self._coverage / self._crops,
+            "global_step_end": int(trainer.global_step),
+        }
+        output = Path(trainer.default_root_dir) / self.output_name
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(f"CropStatsMonitor: {report['crop_with_animal_ratio']:.1%} of crops contain an animal", flush=True)
+        except OSError as exc:  # logging must never block the final checkpoint save
+            print(f"CropStatsMonitor: could not write report: {exc!r}", flush=True)
 
 
 class ThroughputMonitor(Callback):
