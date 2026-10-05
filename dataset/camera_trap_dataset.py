@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image
 import torch.utils.data as data
 
+from utils.illumination import apply_sidecar, load_sidecar
 from utils.image_geometry import resize_for_processing, scale_boxes
 
 
@@ -51,6 +52,10 @@ def _austral_season(datetime_text: Optional[str]) -> str:
 
 
 _SEASONS = ("austral summer", "austral autumn", "austral winter", "austral spring")
+# Light source, not sensor: night frames are flash-lit colour or IR grayscale
+# depending on the camera (utils.illumination), so the prompt names neither.
+NIGHT_PROMPT = "night image"
+DAY_PROMPT = "daylight image"
 
 
 def encode_domain_metadata(row: Mapping) -> int:
@@ -67,7 +72,7 @@ def prompt_from_domain_metadata(
     site_id: Optional[str] = None,
     habitat: Optional[str] = None,
 ) -> str:
-    illumination = "infrared night image" if code & 1 else "daylight RGB image"
+    illumination = NIGHT_PROMPT if code & 1 else DAY_PROMPT
     season = _SEASONS[(int(code) >> 1) & 0b11]
     parts = ["camera trap wildlife photograph", illumination, season]
     if site_id:
@@ -89,7 +94,7 @@ def build_domain_prompt(
     parts = ["camera trap wildlife photograph"]
     illumination = row.get("illumination")
     if include_illumination and illumination:
-        parts.append("infrared night image" if illumination == "night" else "daylight RGB image")
+        parts.append(NIGHT_PROMPT if illumination == "night" else DAY_PROMPT)
     if include_season:
         parts.append(_austral_season(row.get("datetime")))
     site_id = str(row.get("site_id") or "")
@@ -200,6 +205,7 @@ class CameraTrapDataset(data.Dataset):
         habitat_map: Optional[str] = None,
         domain_metadata_bits: int = 8,
         processing_long_side: Optional[int] = None,
+        illumination_sidecar: Optional[str] = None,
     ) -> None:
         super().__init__()
         if split not in {"train", "val", "test"}:
@@ -238,6 +244,12 @@ class CameraTrapDataset(data.Dataset):
             for row in rows
             if row.get("split") == split and (site_id is None or row.get("site_id") == site_id)
         ]
+        if illumination_sidecar:
+            # Light-source day/night labels (utils.illumination) replace the
+            # manifest's capture-hour proxy for H3 metadata and logging.
+            if not Path(illumination_sidecar).is_file():
+                raise FileNotFoundError(f"illumination sidecar not found: {illumination_sidecar}")
+            apply_sidecar(self.rows, load_sidecar(illumination_sidecar))
         if not self.rows:
             suffix = f" and site_id={site_id!r}" if site_id else ""
             raise ValueError(f"no rows for split={split!r}{suffix} in {manifest_path}")

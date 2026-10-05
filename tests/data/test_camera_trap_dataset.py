@@ -48,7 +48,7 @@ def _write_fixture(tmp_path: Path, rows):
 
 def test_domain_prompt_uses_metadata_but_not_ground_truth_species():
     prompt = build_domain_prompt(_row(), include_site=True)
-    assert "infrared night image" in prompt
+    assert "night image" in prompt and "infrared" not in prompt
     assert "austral summer" in prompt
     assert "camera site A01" in prompt
     assert "gemsbok" not in prompt
@@ -144,7 +144,24 @@ def test_domain_metadata_round_trip_prompt():
         code, site_id=row["site_id"], habitat="arid savanna"
     )
     assert code == 5
-    assert "infrared night image" in prompt
+    assert "night image" in prompt
     assert "austral winter" in prompt
     assert "camera site A01" in prompt
     assert "habitat arid savanna" in prompt
+
+
+def test_illumination_sidecar_replaces_the_capture_hour_proxy(tmp_path):
+    manifest, root = _write_fixture(tmp_path, [_row(illumination="night")])  # 22:10 by the clock
+    sidecar = tmp_path / "illumination.jsonl"
+    sidecar.write_text(json.dumps({
+        "image_id": "KGA:img1", "illumination": "day",
+        "illumination_source": "exif_flash", "is_grayscale": False,
+    }) + "\n", encoding="utf-8")
+    dataset = CameraTrapDataset(
+        str(manifest), str(root), split="train", out_size=64, crop_type="center",
+        domain_conditioning=True, illumination_sidecar=str(sidecar),
+    )
+    assert dataset.rows[0]["illumination"] == "day"
+    assert dataset.rows[0]["illumination_hour_proxy"] == "night"
+    assert encode_domain_metadata(dataset.rows[0]) & 1 == 0
+    assert "daylight image" in dataset[0]["txt"]

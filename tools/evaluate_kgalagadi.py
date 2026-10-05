@@ -31,6 +31,7 @@ from PIL import Image
 from dataset.camera_trap_dataset import _box_xywh, _load_detection_map
 from tools.data.split_check import assert_no_leakage
 from utils.eval_stats import aggregate, bootstrap_ci, stratified_groups
+from utils.illumination import RULES as ILLUMINATION_RULES, apply_sidecar, load_sidecar
 from utils.image_geometry import center_crop_boxes, center_crop_image, resolve_geometry
 from utils.metrics import LPIPS, compute_psnr, compute_ssim, compute_ssim_masked
 from utils.results_registry import REGISTRY_METRICS, metric_rows, upsert_jsonl
@@ -70,8 +71,7 @@ def _load_rows(path, split, site_id, dev_list=None):
 
 
 def _illumination(row):
-    # Grayscale-derived day/night (Phase 2) beats the capture-hour proxy.
-    return str(row.get("illumination_ir") or row.get("illumination") or "unknown")
+    return str(row.get("illumination") or "unknown")
 
 
 def _boxes_for(row, detections, width, height, threshold):
@@ -144,6 +144,11 @@ def main(argv=None):
     parser.add_argument("--split", default="test")
     parser.add_argument("--site-id", default=None)
     parser.add_argument("--dev-list", default=None, help="frozen image_id list (EVAL-16), e.g. kgalagadi_dev.txt")
+    parser.add_argument(
+        "--illumination-sidecar", default="data/manifests/kgalagadi_illumination.jsonl",
+        help="light-source day/night labels from tools/data/label_illumination.py; "
+             "the manifest capture-hour proxy is used only if the file is absent",
+    )
     parser.add_argument("--method", required=True, help="B0, H1, H2, H3, jpeg, webp, compressai:<model>")
     parser.add_argument("--dataset", default="snapshot_kgalagadi")
     parser.add_argument("--limit", type=int, default=None, help="evaluate only the first N filtered rows")
@@ -184,6 +189,15 @@ def main(argv=None):
         rows = rows[:args.limit]
     if not rows:
         parser.error("manifest filter selected no rows")
+    illumination_sidecar = load_sidecar(args.illumination_sidecar)
+    relabelled = apply_sidecar(rows, illumination_sidecar)
+    if illumination_sidecar and relabelled != len(rows):
+        raise ValueError(
+            f"illumination sidecar covers {relabelled}/{len(rows)} selected rows; "
+            "re-run tools/data/label_illumination.py"
+        )
+    illumination_labels = "light_source_sidecar" if relabelled else "manifest_capture_hour_proxy"
+    print(f"Day/night labels: {illumination_labels}")
     detections = _load_detection_map(args.detections)
     if args.detections:
         uncovered = [
@@ -306,6 +320,8 @@ def main(argv=None):
         "compression_ratio": "24*H*W / bitstream bits, H and W of the evaluation reference",
         "bootstrap": f"{args.bootstrap_resamples} resamples, site clusters when >1 site",
         "dev_list": args.dev_list,
+        "illumination_labels": illumination_labels,
+        "illumination_rules": ILLUMINATION_RULES if relabelled else None,
     }
     summary_path = output.with_suffix(".summary.json")
     summary_path.write_text(

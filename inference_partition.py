@@ -40,6 +40,7 @@ from utils.checkpoint_contract import (
 )
 from utils.file import list_image_files, get_file_name_parts
 from dataset.camera_trap_dataset import encode_domain_metadata, prompt_from_domain_metadata
+from utils.illumination import apply_sidecar, load_sidecar
 
 
 class CachedTagCodec:
@@ -358,6 +359,10 @@ def parse_args() -> Namespace:
     parser.add_argument('--tag-vocabulary', default=None, help='optional restricted vocabulary for H3')
     parser.add_argument('--domain-metadata', action='store_true', help='transmit H3 illumination/season byte')
     parser.add_argument(
+        '--illumination-sidecar', default='data/manifests/kgalagadi_illumination.jsonl',
+        help='light-source day/night labels (tools/data/label_illumination.py) for H3 metadata',
+    )
+    parser.add_argument(
         '--habitat-map', default=None,
         help='optional JSON object site_id -> verified habitat label; requires --domain-metadata',
     )
@@ -508,6 +513,15 @@ def main() -> None:
         ]
         if not selected_rows:
             raise ValueError('manifest filters selected no images')
+        if args.domain_metadata:
+            sidecar = load_sidecar(args.illumination_sidecar)
+            if not sidecar:
+                raise FileNotFoundError(
+                    '--domain-metadata needs light-source day/night labels: '
+                    f'{args.illumination_sidecar} (tools/data/label_illumination.py)'
+                )
+            if apply_sidecar(selected_rows, sidecar) != len(selected_rows):
+                raise KeyError('illumination sidecar does not cover every selected image')
         manifest_rows = {}
         for row in selected_rows:
             for key in (row.get('relative_path'), row.get('source_file_name')):

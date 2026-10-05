@@ -21,7 +21,7 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **DATA-01**: Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có nhãn người được tải và chuẩn hoá; Snapshot Serengeti chỉ dùng đánh giá bổ sung
 - [ ] **DATA-02**: Mỗi site Kgalagadi được chia train/val/test 70/15/15 theo **sequence/burst**, không phải theo ảnh. Split đã đóng băng (`kgalagadi_site_split.jsonl` + SHA-256) và không đổi trong suốt dự án. (Từ 04/10: H1 chính là một model chung cho mọi site — xem H1-05; model riêng từng site chỉ là mở rộng tuỳ chọn)
 - [ ] **DATA-03**: `split_check.py` assert không có sequence/burst nào xuất hiện ở hai split và **chạy tự động trước mọi job training/eval** đọc file split (site được phép xuất hiện ở cả ba split theo protocol per-site)
-- [ ] **DATA-04**: Thống kê miền đo được trên chính corpus của nhóm — tỉ lệ ảnh rỗng, tỉ lệ ngày RGB vs đêm IR, phân bố diện tích bbox so với khung hình
+- [ ] **DATA-04**: Thống kê miền đo được trên chính corpus của nhóm — tỉ lệ ảnh rỗng, tỉ lệ ngày/đêm theo **nguồn sáng** (`utils/illumination.py`, kèm số ảnh theo từng nguồn tín hiệu), phân bố diện tích bbox so với khung hình
 - [ ] **DATA-05**: Xác minh metadata `datetime` và `location` còn dùng được — kiểm tra EXIF trên 100 ảnh đầu, fallback sang trường JSON của LILA nếu EXIF bị strip
 - [ ] **DATA-06**: ROI mask Kgalagadi sinh từ bbox MegaDetector với detector/ngưỡng cố định, kèm histogram độ phủ mask; ghi rõ đây là pseudo-label
 - [ ] **DATA-07**: Corpus đóng gói dạng shard (tar/webdataset) và copy về đĩa local của session lúc khởi động, không đọc trực tiếp từng file nhỏ trên Drive
@@ -40,7 +40,7 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 - [ ] **EVAL-02**: Eval harness chạy MegaDetector V6 và SpeciesNet trong **conda env cô lập**, giao tiếp qua JSON trên đĩa, không import chung
 - [ ] **EVAL-03**: Detection mAP báo cáo **tách theo AP_small / AP_medium / AP_large**, không chỉ mAP tổng
 - [ ] **EVAL-04**: Species accuracy báo cáo ở **cả mức loài và mức nhóm/taxonomic fallback**
-- [ ] **EVAL-05**: Mọi metric chính báo cáo **tách ngày RGB / đêm IR**, không bao giờ gộp
+- [ ] **EVAL-05**: Mọi metric chính báo cáo **tách ngày / đêm**, không bao giờ gộp. Đêm = ảnh do camera tự chiếu sáng (flash trắng hoặc đèn IR), xác định từ chính file ảnh theo thứ tự EXIF Flash → ảnh xám IR → độ cao mặt trời (chỉ khi dataset có toạ độ) → độ sáng pixel; không dùng giờ chụp (sửa 05/10/2026)
 - [ ] **EVAL-06**: Tỉ lệ false positive trên ảnh rỗng được theo dõi như metric hạng nhất, dẫn xuất từ cùng một lượt inference MegaDetector đã chạy cho mAP
 - [ ] **EVAL-07**: Tỉ lệ ảo giác trên ảnh rỗng — đo tần suất decoder sinh ra động vật không có trong ảnh gốc
 - [ ] **EVAL-08**: Metric chất lượng ảnh qua `pyiqa` — PSNR, MS-SSIM, LPIPS, DISTS, FID
@@ -79,14 +79,14 @@ Mục tiêu: một bộ checkpoint và **một lần giải mã** dùng được
 ### H3 — Domain-aware Tag Guidance Module (tầng L1 + L2, không cần training)
 
 - [ ] **H3-01**: Vocab RAM++ thu gọn (tối đa ~256 tag liên quan động vật hoang dã), mã hoá ⌈log₂ n⌉ bit/tag thay vì 13; bản hiện tại 37 tag / 6 bit (`data/vocab/kgalagadi_wildlife_tags.txt`), quy mô cuối chốt sau H3-05
-- [ ] **H3-02**: Structured attribute từ metadata thật — `illumination` suy từ chính ảnh, `season`/giờ từ timestamp, `habitat` từ site ID; tách bạch trong báo cáo với trường phải dự đoán
+- [ ] **H3-02**: Structured attribute từ metadata thật — `illumination` suy từ chính ảnh theo nguồn sáng (`utils/illumination.py`), `season`/giờ từ timestamp, `habitat` từ site ID; tách bạch trong báo cáo với trường phải dự đoán. **Lưu ý 05/10:** `season` hiện mã hoá theo Nam bán cầu (austral) — phải suy bán cầu từ dữ liệu trước khi dùng cho dataset khác
 - [ ] **H3-03**: Tag mới nối vào qua wrapper quanh `TagGCM.extract_tag()`, **không sửa RAM++ và không cần training lại**
 - [ ] **H3-04**: Overhead bit thực tế của tag đo được và đối chiếu với bitstream latent
-- [ ] **H3-05**: Kiểm chứng thực nghiệm giả định "RAM++ trả về tag mô tả định dạng thay vì nội dung trên ảnh IR" — chạy RAM++ trên 50–100 ảnh đêm trước khi chốt thiết kế H3
-- [ ] **H3-06**: Ít nhất 3 template prompt được so sánh có hệ thống, bắt buộc có một template nêu rõ tính chất hồng ngoại đơn sắc
-- [ ] **H3-07**: Kiểm tra ảo giác màu trên ảnh đêm IR — xác nhận phương sai chroma của ảnh decode gần 0, vì SD 2.1 gần như không có prior cho ảnh IR đơn sắc
+- [ ] **H3-05**: Kiểm chứng thực nghiệm giả định "RAM++ trả về tag mô tả định dạng thay vì nội dung trên ảnh đêm" — chạy RAM++ trên 50–100 ảnh đêm trước khi chốt thiết kế H3. Kgalagadi dùng flash trắng (ảnh đêm là ảnh màu, 0/450 ảnh mẫu là ảnh xám), nên kiểm chứng cho ảnh IR xám chỉ làm được nếu có dataset camera IR
+- [ ] **H3-06**: Ít nhất 3 template prompt được so sánh có hệ thống, bắt buộc có một template nêu rõ ảnh đêm do camera chiếu sáng (flash, hoặc hồng ngoại đơn sắc khi `is_grayscale`)
+- [ ] **H3-07**: Kiểm tra ảo giác màu trên ảnh gốc **xám** (`is_grayscale`, camera IR) — xác nhận phương sai chroma của ảnh decode gần 0, vì SD 2.1 gần như không có prior cho ảnh IR đơn sắc. Không áp dụng cho ảnh đêm flash màu
 - [ ] **H3-08**: Thí nghiệm đổi prompt lúc decode chạy chồng lên checkpoint H1/H2 để lấp ô bảng ablation với chi phí gần bằng 0
-- [ ] **H3-09**: Ảnh đêm IR được **ép thành ảnh xám khi giải mã**, dựa trên bit ngày/đêm có trong bitstream (bit này phải được truyền và tính vào BPP kể cả khi không bật metadata H3). Đo riêng trên ảnh đêm: SSIM, LPIPS, phương sai chroma trước/sau khi ép xám. Không cần train (thêm 04/10/2026)
+- [ ] **H3-09**: Ảnh gốc **xám** (`is_grayscale`, camera IR) được **ép thành ảnh xám khi giải mã**, dựa trên một bit "ảnh xám" trong bitstream — không dựa trên bit ngày/đêm, vì ảnh đêm flash là ảnh màu (sửa 05/10/2026) (bit này phải được truyền và tính vào BPP kể cả khi không bật metadata H3). Đo riêng trên ảnh đêm: SSIM, LPIPS, phương sai chroma trước/sau khi ép xám. Không cần train (thêm 04/10/2026)
 - [ ] **H3-10**: **Chọn bitrate theo nội dung** ở encoder: MegaDetector (detector/ngưỡng cố định) chạy trên ảnh gốc; ảnh rỗng mã hoá bằng checkpoint λ cao (nén mạnh), ảnh có thú bằng λ thấp; 1 bit trong bitstream cho decoder biết dùng checkpoint nào, tính vào BPP. Báo cáo bắt buộc: tỉ lệ ảnh có thú bị detector bỏ sót (bị nén mạnh nhầm) và ảnh hưởng của nó lên detection/species. Chỉ dùng checkpoint có sẵn, không train (thêm 04/10/2026)
 
 ### Analysis — Tổng hợp và đo cái giá của chuyên biệt hoá

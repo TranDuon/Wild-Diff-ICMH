@@ -76,9 +76,12 @@ throughput thật từ `ver2`).
 ---
 
 ### Bổ sung sau Phase 1 (04/10)
-- Closeout cho thấy 9/100 ảnh có nhãn ngày/đêm theo giờ lệch với ảnh xám IR. Plan 02-05 thêm
-  `illumination_ir` xác định theo ảnh xám (kênh màu gần trùng nhau) cho cả corpus; mọi chỉ số tách
-  ngày/đêm (EVAL-05) và metadata H3 dùng trường này, giữ trường cũ để đối chiếu.
+- **Ngày/đêm theo nguồn sáng (05/10, xong code):** `utils/illumination.py` + `tools/data/label_illumination.py`
+  → sidecar `data/manifests/kgalagadi_illumination.jsonl` (chạy trên Colab vì cần đủ ảnh; ~vài phút CPU),
+  được evaluator, `build_dev_set.py`, decode H3 và `CameraTrapDataset(illumination_sidecar=...)` dùng.
+  Nhãn theo giờ trong manifest chỉ còn để đối chiếu. **Tập dev phải đóng băng lại** sau khi có sidecar
+  (bản `f3534b5` phân tầng theo giờ chụp là bản tạm).
+- Mùa trong H3 đang mã hoá theo Nam bán cầu — phải tổng quát hoá ở Phase 5 trước khi dùng cho dataset khác.
 - Mỗi phiên Colab tốn ~1 CU cố định ⇒ gộp MegaDetector + tag 20 site + decode B0 vào ít phiên nhất.
 
 ## Verification

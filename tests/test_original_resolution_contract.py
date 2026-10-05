@@ -48,4 +48,4 @@ def test_evaluator_reports_eval13_metrics_with_protocol_and_ci():
     assert "bootstrap_ci(" in source
     assert "stratified_groups(" in source
     assert "protocol=protocol" in source
-    assert 'row.get("illumination_ir")' in source
+    assert "apply_sidecar(rows, illumination_sidecar)" in source

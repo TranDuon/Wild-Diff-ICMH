@@ -22,6 +22,12 @@ if str(_THIS_DIR) not in sys.path:
 
 import split_check  # noqa: E402
 
+REPO_ROOT = _THIS_DIR.parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from utils.illumination import apply_sidecar, load_sidecar  # noqa: E402
+
 # Scarce strata are taken whole; day-empty fills the rest of the budget.
 PRIORITY_STRATA = (("day", "animal"), ("night", "animal"), ("night", "empty"))
 FILL_STRATUM = ("day", "empty")
@@ -91,9 +97,17 @@ def main(argv=None) -> int:
     parser.add_argument("--size", type=int, default=300)
     parser.add_argument("--seed", type=int, default=20261005)
     parser.add_argument("--output", default="data/manifests/kgalagadi_dev.txt")
+    parser.add_argument(
+        "--illumination-sidecar", default="data/manifests/kgalagadi_illumination.jsonl",
+        help="stratify by light-source day/night; falls back to the capture-hour proxy if absent",
+    )
     args = parser.parse_args(argv)
 
     rows = split_check.assert_no_leakage([Path(args.manifest)], build_info=args.build_info)
+    relabelled = apply_sidecar(rows, load_sidecar(args.illumination_sidecar))
+    if relabelled and relabelled != len(rows):
+        raise ValueError(f"illumination sidecar covers {relabelled}/{len(rows)} manifest rows")
+    illumination_labels = "light-source sidecar" if relabelled else "manifest capture-hour proxy"
     selected = select_dev_rows(rows, size=args.size, seed=args.seed)
     stats = describe(selected)
     header = [
@@ -101,7 +115,7 @@ def main(argv=None) -> int:
         f"# generator: tools/data/build_dev_set.py --size {args.size} --seed {args.seed}",
         f"# source: {Path(args.manifest).as_posix()} split=val, one frame per sequence",
         f"# stats: {json.dumps(stats, sort_keys=True)}",
-        "# strata use the manifest capture-hour illumination; evaluation groups by illumination_ir when present",
+        f"# day/night strata: {illumination_labels}",
     ]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

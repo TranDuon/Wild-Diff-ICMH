@@ -67,8 +67,14 @@ lý chứ không chép đúng pixel. Vì vậy phải báo nhiều chỉ số (E
 - **False positive trên ảnh rỗng**: MD báo có con vật ở ảnh vốn rỗng.
 - **Tỉ lệ ảo giác (EVAL-07)**: rủi ro riêng của codec diffusion là **tự vẽ ra con vật không có
   thật**. Với 77% ảnh rỗng, đây là chỉ số sống còn với người dùng sinh thái học.
-- **Tách ngày RGB / đêm IR (EVAL-05)**: ảnh đêm là ảnh xám hồng ngoại, hành vi rất khác; gộp chung
-  sẽ che mất lỗi.
+- **Tách ngày / đêm (EVAL-05)**: ảnh đêm có hành vi rất khác; gộp chung sẽ che mất lỗi.
+  **Định nghĩa (05/10):** "đêm" = ảnh do camera tự chiếu sáng (flash trắng → ảnh màu, hoặc đèn IR →
+  ảnh xám), không phải "sau 19 giờ". Xác định từ chính file ảnh, dùng được cho mọi dataset
+  (`utils/illumination.py`): EXIF Flash bật → đêm; ảnh xám → đêm; EXIF Flash tắt → ngày; nếu dataset
+  có toạ độ thì độ cao mặt trời ≤ −6°; cuối cùng mới đến độ sáng phần trên ảnh (độ tin thấp).
+  Trên 450 ảnh Kgalagadi: cả 450 có thẻ Flash; 46 ảnh đêm khớp 100% với độ cao mặt trời; nhãn theo
+  giờ cũ gán nhầm 32 ảnh bình minh/hoàng hôn là đêm. Camera Kgalagadi (Cuddeback) dùng flash trắng
+  nên ảnh đêm là ảnh **màu**.
 - **Env cô lập (EVAL-02)**: MD và SpeciesNet ghim thư viện xung đột nhau, nên mỗi cái chạy trong môi
   trường Python riêng và chỉ trao đổi qua file JSON.
 

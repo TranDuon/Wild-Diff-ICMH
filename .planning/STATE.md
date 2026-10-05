@@ -72,6 +72,7 @@ Progress: [██░░░░░░░░] 17%
 - [2026-10-04]: Bài so sánh ngoài chưa chốt ⇒ đánh giá độc lập với bài so sánh (ROADMAP G-1..G-5): H1 chính là một model chung cho 20 site (thay cho model riêng từng site của quyết định 24/09); đo end-to-end ở độ phân giải gốc với độ phân giải xử lý mặc định cạnh dài 1024; λ = 2/8/32 + núm giải mã; tập dev từ validation, test chạy một lần; lưu toàn bộ bitstream + ảnh tái tạo; đa chỉ số; baseline phổ quát. Requirement mới: EVAL-11..16, H1-05, H1-06, ANLS-09.
 - [2026-10-04]: Thêm hai cải tiến chỉ ở encode/decode, không train: ép xám ảnh đêm khi giải mã (H3-09) và chọn bitrate theo nội dung bằng MegaDetector ở encoder (H3-10), gộp thành cấu hình B5. Ảnh nền tham chiếu theo site (V2-09) và fine-tune riêng từng site lớn (V2-10) đưa vào v2. Tổng 70 requirement v1.
 - [2026-10-04]: Phase 1 đóng với số đo thật: 5,53 s/optimizer step, ~1 CU chi phí cố định mỗi phiên Colab, 1,37 CU cho phiên closeout. Ngày/đêm theo giờ lệch ảnh xám IR ở 9/100 ảnh ⇒ Phase 2 xác định đêm theo ảnh xám.
+- [2026-10-05]: Ngày/đêm định nghĩa theo **nguồn sáng** (đêm = camera tự chiếu sáng bằng flash hoặc IR), xác định từ chính file ảnh để dùng được cho mọi dataset: EXIF Flash → ảnh xám IR → độ cao mặt trời (chỉ khi có toạ độ) → độ sáng pixel. Kgalagadi dùng flash trắng ⇒ ảnh đêm là ảnh màu; nhãn theo giờ cũ sai 32/78 ảnh "đêm" ở mẫu 450 ảnh. H3-05/06/07/09 sửa theo `is_grayscale`.
 - [Roadmap]: Sửa số liệu Coverage trong REQUIREMENTS.md — file có 59 requirement v1 có ID cụ thể, không phải 52 như dòng tổng ghi lúc định nghĩa requirements.
 
 ### Pending Todos
