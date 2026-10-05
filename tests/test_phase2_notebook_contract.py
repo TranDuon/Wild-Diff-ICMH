@@ -24,7 +24,7 @@ def test_every_phase2_code_cell_compiles():
 
 def test_phase2_reuses_setup_on_its_own_branch():
     code = _code()
-    assert "BRANCH = 'phase2'" in code and "BRANCH = 'ver2'" not in code
+    assert "BRANCH = 'phase2'" in code and "'ver2'" not in code
     assert "CU_AVAILABLE_AT_START = None" in code and "CU_AVAILABLE_NOW = None" in code
 
 

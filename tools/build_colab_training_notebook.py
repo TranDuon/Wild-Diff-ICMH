@@ -76,7 +76,7 @@ cells = [
         import sys
 
         REPO_URL = 'https://github.com/TranDuon/Wild-Diff-ICMH.git'
-        BRANCH = 'ver2'  # test branch; set back to 'main' when merging
+        BRANCH = 'phase2'  # test branch; set back to 'main' when merging
         REPO = Path('/content/Wild-Diff-ICMH')
 
         if (REPO / '.git').is_dir():

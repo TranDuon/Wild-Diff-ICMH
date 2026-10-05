@@ -12,7 +12,7 @@ from pathlib import Path
 
 from build_colab_training_notebook import cells as TRAINING_CELLS, code, markdown
 
-BRANCH_LINE_TRAINING = "BRANCH = 'ver2'  # test branch; set back to 'main' when merging"
+BRANCH_LINE_TRAINING = "BRANCH = 'phase2'  # test branch; set back to 'main' when merging"
 BRANCH_LINE_PHASE2 = "BRANCH = 'phase2'  # Phase 2 branch; set back to 'main' when merging"
 
 
