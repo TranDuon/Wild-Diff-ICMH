@@ -58,3 +58,10 @@ def test_timing_probe_runs_once_per_project_not_per_session():
     code = _code()
     assert "PROBE_FILE = P2 / 'probe_timing.json'" in code
     assert "if str(side) not in probe_seconds:" in code
+
+
+def test_detector_env_does_not_depend_on_ensurepip():
+    code = _code()
+    assert "'-m', 'venv'" not in code
+    assert "'-m', 'virtualenv', '--system-site-packages'" in code
+    assert "DETECT_READY.touch()" in code

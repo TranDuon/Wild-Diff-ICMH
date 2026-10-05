@@ -224,10 +224,19 @@ cells = [
     ),
     code(
         """
-        DETECT_PY = Path('/content/envs/detect/bin/python')
-        if not DETECT_PY.exists():
-            subprocess.run([sys.executable, '-m', 'venv', '--system-site-packages', '/content/envs/detect'], check=True)
-            subprocess.run([str(DETECT_PY), '-m', 'pip', 'install', '-q', 'PytorchWildlife'], check=True)
+        # Colab's Python has no ensurepip, so ``python -m venv`` cannot install pip;
+        # virtualenv ships its own.  --system-site-packages reuses Colab's torch.
+        DETECT_ENV = Path('/content/envs/detect')
+        DETECT_PY = DETECT_ENV / 'bin' / 'python'
+        DETECT_READY = DETECT_ENV / '.ready'
+        if not DETECT_READY.exists():
+            shutil.rmtree(DETECT_ENV, ignore_errors=True)  # leftovers of a failed attempt
+            run_logged([sys.executable, '-m', 'pip', 'install', '-q', 'virtualenv'], 'p2_detect_env.log')
+            run_logged([sys.executable, '-m', 'virtualenv', '--system-site-packages', DETECT_ENV], 'p2_detect_env.log')
+            run_logged([DETECT_PY, '-m', 'pip', 'install', '-q', 'PytorchWildlife'], 'p2_detect_env.log')
+            run_logged([DETECT_PY, '-c', 'from PytorchWildlife.models import detection; print("PytorchWildlife OK")'],
+                       'p2_detect_env.log')
+            DETECT_READY.touch()
 
         run_logged([
             DETECT_PY, '-u', 'tools/detect/run_megadetector.py', '--manifest', MANIFEST,
