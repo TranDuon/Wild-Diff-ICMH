@@ -4,6 +4,10 @@ import copy
 import gc
 import json
 import math
+import subprocess
+import time
+import zlib
+from datetime import datetime, timezone
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 from argparse import ArgumentParser, Namespace
 
@@ -19,7 +23,13 @@ from model.spaced_sampler import SpacedSampler
 from model.ddim_sampler import DDIMSampler
 from model.diffeic import DiffEIC
 from utils.image import pad
-from utils.image_geometry import center_crop_image, resolve_crop_size
+from utils.image_geometry import (
+    PROCESSING_RESAMPLING,
+    center_crop_image,
+    resize_for_processing,
+    resolve_geometry,
+    restore_original_size,
+)
 from utils.metrics import compute_psnr, compute_ssim, LPIPS
 from utils.common import instantiate_from_config, load_state_dict
 from utils.checkpoint_contract import (
@@ -121,6 +131,7 @@ def process(
     cached_tag_codec: Optional[CachedTagCodec] = None,
     domain_site_id: Optional[str] = None,
     domain_habitat: Optional[str] = None,
+    timings: Optional[dict] = None,
 ) -> Tuple[List[np.ndarray], float]:
     """
     Apply DiffEIC model on a list of images.
@@ -131,11 +142,19 @@ def process(
         sampler (str): Sampler name.
         steps (int): Sampling steps.
         stream_path (str): Savedir of bitstream
-    
+        timings (dict, optional): filled with ``encode_seconds`` (bitstream
+            written) and ``decode_seconds`` (bitstream read to pixels).
+
     Returns:
         preds (List[np.ndarray]): Restoration results (HWC, RGB, range in [0, 255]).
         bpp
     """
+    def _now():
+        if model.device.type == "cuda":
+            torch.cuda.synchronize(model.device)
+        return time.perf_counter()
+
+    encode_started = _now()
     n_samples = len(imgs)
     if sampler == "ddpm":
         sampler = SpacedSampler(model, var_type="fixed_small")
@@ -176,6 +195,9 @@ def process(
         bpp = model.apply_condition_compress(
             control, stream_path, height, width, domain_metadata_codes=domain_codes
         )
+    decode_started = _now()
+    if timings is not None:
+        timings["encode_seconds"] = decode_started - encode_started
     if tag_enabled:
         if domain_codes is not None:
             c_latent, c_tag_ids, decoded_domain_codes = model.apply_condition_decompress(
@@ -288,7 +310,9 @@ def process(
     x_samples = (einops.rearrange(x_samples, "b c h w -> b h w c") * 255).cpu().numpy().clip(0, 255).astype(np.uint8)
     
     preds = [x_samples[i] for i in range(n_samples)]
-    
+    if timings is not None:
+        timings["decode_seconds"] = _now() - decode_started
+
     return preds, bpp
 
 
@@ -308,7 +332,17 @@ def parse_args() -> Namespace:
     parser.add_argument("--limit", type=int, default=None, help="process only the first N selected images")
     parser.add_argument(
         "--crop-size", type=int, default=None,
-        help="deterministically center-crop each image before coding (use 256 for the Colab protocol)",
+        help="smoke-test protocol: center-crop each image before coding (e.g. 256)",
+    )
+    parser.add_argument(
+        "--processing-long-side", type=int, default=None,
+        help="EVAL-11: shrink the long side to this before coding and restore the original size "
+             "after decoding (default 1024 with --manifest; mutually exclusive with --crop-size)",
+    )
+    parser.add_argument(
+        "--skip-existing", action="store_true",
+        help="resume an interrupted run: skip images whose reconstruction, bitstream and "
+             "decode_log.jsonl record already exist",
     )
     
     parser.add_argument("--seed", type=int, default=231)
@@ -333,16 +367,65 @@ def parse_args() -> Namespace:
     return parser.parse_args()
 
 
+def _git_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=os.path.dirname(os.path.abspath(__file__)), text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return 'unknown'
+
+
+def _write_run_info(args: Namespace, model_config) -> None:
+    """Record the decode protocol next to the archive (EVAL-12/EVAL-15)."""
+    info = {
+        'schema_version': 1,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'git_commit': _git_commit(),
+        'checkpoint': os.path.abspath(args.ckpt_lc),
+        'checkpoint_bytes': os.path.getsize(args.ckpt_lc) if os.path.isfile(args.ckpt_lc) else None,
+        'protocol': 'center_crop' if args.crop_size is not None else 'original_resolution',
+        'crop_size': args.crop_size,
+        'processing_long_side': args.processing_long_side,
+        'resampling': PROCESSING_RESAMPLING,
+        'evaluation_resolution': 'crop' if args.crop_size is not None else 'original',
+        'sampler': args.sampler,
+        'steps': args.steps,
+        'seed': args.seed,
+        'seed_policy': 'seed + crc32(relative_path) per image',
+        'c_cfg_scale': float(model_config.params.get('c_cfg_scale', 0.0)),
+        'anchor_prior_strength': args.anchor_prior_strength,
+        'tag_cache': args.tag_cache,
+        'tag_vocabulary': args.tag_vocabulary,
+        'domain_metadata': bool(args.domain_metadata),
+        'manifest': args.manifest,
+        'split': args.split,
+        'site_id': args.site_id,
+        'overrides': list(args.overrides or []),
+    }
+    path = os.path.join(args.output, 'run_info.json')
+    temporary = path + '.part'
+    with open(temporary, 'w', encoding='utf-8') as stream:
+        json.dump(info, stream, indent=2, sort_keys=True)
+        stream.write('\n')
+    os.replace(temporary, path)
+
+
 def main() -> None:
     args = parse_args()
     if args.limit is not None and args.limit <= 0:
         raise ValueError('--limit must be positive')
-    requested_crop_size = args.crop_size
-    args.crop_size = resolve_crop_size(
-        requested_crop_size, manifest_supplied=bool(args.manifest)
+    args.crop_size, args.processing_long_side = resolve_geometry(
+        args.crop_size, args.processing_long_side, manifest_supplied=bool(args.manifest)
     )
-    if requested_crop_size is None and args.crop_size is not None:
-        print(f"Manifest input: defaulting to a safe {args.crop_size}x{args.crop_size} center crop")
+    if args.crop_size is not None:
+        print(f"Smoke protocol: {args.crop_size}x{args.crop_size} center crop (not for reported numbers)")
+    elif args.processing_long_side is not None:
+        print(
+            f"Original-resolution protocol: code at long side {args.processing_long_side}, "
+            "evaluate at the original size"
+        )
     pl.seed_everything(args.seed)
     
     if args.device == "cpu":
@@ -433,6 +516,18 @@ def main() -> None:
     elif args.split or args.site_id:
         raise ValueError('--split/--site-id require --manifest')
 
+    os.makedirs(args.output, exist_ok=True)
+    decode_log_path = os.path.join(args.output, 'decode_log.jsonl')
+    logged_paths = set()
+    if os.path.isfile(decode_log_path):
+        with open(decode_log_path, 'r', encoding='utf-8') as stream:
+            for line in stream:
+                try:
+                    logged_paths.add(json.loads(line)['relative_path'])
+                except (json.JSONDecodeError, KeyError):
+                    continue  # a line cut by a dead runtime is decoded again
+    _write_run_info(args, model_config)
+
     # Intialize the LPIPS model
     lpips = LPIPS('alex').to(args.device)
     print(f"sampling {args.steps} steps using {args.sampler} sampler")
@@ -445,21 +540,32 @@ def main() -> None:
     for file_path in file_paths:
         if not os.path.isfile(file_path):
             raise FileNotFoundError(file_path)
+        relative_file_path = os.path.relpath(file_path, args.input).replace('\\', '/')
+        save_path = os.path.join(args.output, relative_file_path)
+        parent_path, stem, _ = get_file_name_parts(save_path)
+        stream_parent_path = os.path.join(parent_path, 'data')
+        save_path = os.path.join(parent_path, f"{stem}.png")
+        stream_path = os.path.join(stream_parent_path, f"{stem}")
+        if (
+            args.skip_existing and relative_file_path in logged_paths
+            and os.path.isfile(save_path) and os.path.isfile(stream_path)
+        ):
+            print(f"skip (already decoded): {relative_file_path}")
+            continue
+
+        # ``img`` is the evaluation reference: the original frame, or the smoke crop.
         img = Image.open(file_path).convert("RGB")
         if args.crop_size is not None:
             original_size = img.size
             img = center_crop_image(img, args.crop_size)
             print(
                 f"Center crop {original_size[0]}x{original_size[1]} -> "
-                f"{img.width}x{img.height}: {os.path.relpath(file_path, args.input)}"
+                f"{img.width}x{img.height}: {relative_file_path}"
             )
-        x = pad(np.array(img), scale=64)
-        
-        save_path = os.path.join(args.output, os.path.relpath(file_path, args.input))
-        parent_path, stem, _ = get_file_name_parts(save_path)
-        stream_parent_path = os.path.join(parent_path, 'data')
-        save_path = os.path.join(parent_path, f"{stem}.png")
-        stream_path = os.path.join(stream_parent_path, f"{stem}")
+        coded = resize_for_processing(img, args.processing_long_side)
+        x = pad(np.array(coded), scale=64)
+        # Per-image seed: identical noise whether or not earlier images were skipped.
+        torch.manual_seed((args.seed + zlib.crc32(relative_file_path.encode('utf-8'))) % (2 ** 31))
 
         os.makedirs(parent_path, exist_ok=True)
         os.makedirs(stream_parent_path, exist_ok=True)
@@ -480,6 +586,7 @@ def main() -> None:
             if record is None:
                 raise KeyError(f"No cached RAM++ tags found for {row['image_id']}")
             cached_tag_records = [record]
+        timings = {}
         preds, _ = process(
             model, [x], steps=args.steps, sampler=args.sampler,
             stream_path=stream_path,
@@ -489,18 +596,24 @@ def main() -> None:
             cached_tag_codec=cached_tag_codec,
             domain_site_id=args.site_id if args.domain_metadata else None,
             domain_habitat=habitat_by_site.get(args.site_id),
+            timings=timings,
         )
-        pred = preds[0][:img.height, :img.width, :]
+        restore_started = time.perf_counter()
+        pred_image = Image.fromarray(preds[0][:coded.height, :coded.width, :])
+        pred_image = restore_original_size(pred_image, img.size)
+        pred = np.asarray(pred_image)
+        restore_seconds = time.perf_counter() - restore_started
 
-        # The codec pads to a multiple of 64 internally.  Paper-comparable
-        # BPP uses the transmitted bytes but the original, unpadded pixels.
-        bpp = os.path.getsize(stream_path) * 8.0 / (img.width * img.height)
-        total_bits += os.path.getsize(stream_path) * 8
+        # The codec pads to a multiple of 64 internally.  BPP uses the
+        # transmitted bytes over the pixels of the evaluation reference (the
+        # original frame), never the padded or downscaled coding size.
+        bitstream_bytes = os.path.getsize(stream_path)
+        bpp = bitstream_bytes * 8.0 / (img.width * img.height)
+        total_bits += bitstream_bytes * 8
         total_pixels += img.width * img.height
 
         # calculate bpp and save to list
         bpps.append(bpp)
-        relative_file_path = os.path.relpath(file_path, args.input)
 
         x_tmp = torch.tensor(np.asarray(img)).permute(2, 0, 1).unsqueeze(0).float().to(args.device) / 255
         xhat_tmp = torch.tensor(pred).permute(2, 0, 1).unsqueeze(0).float().to(args.device) / 255
@@ -518,9 +631,28 @@ def main() -> None:
             'lpips': lpips_value.item()
         })
         
-        Image.fromarray(pred).save(save_path)
-        print(f"save to {save_path}, bpp {bpp}")
+        pred_image.save(save_path)
+        log_record = {
+            'relative_path': relative_file_path,
+            'image_id': row['image_id'] if manifest_rows is not None else None,
+            'bitstream_bytes': bitstream_bytes,
+            'bpp': bpp,
+            'original_size': list(img.size),
+            'coded_size': list(coded.size),
+            'encode_seconds': timings.get('encode_seconds'),
+            'decode_seconds': timings.get('decode_seconds'),
+            'restore_seconds': restore_seconds,
+        }
+        with open(decode_log_path, 'a', encoding='utf-8') as stream:
+            stream.write(json.dumps(log_record, sort_keys=True) + '\n')
+        print(
+            f"save to {save_path}, bpp {bpp:.4f}, "
+            f"encode {timings.get('encode_seconds', 0):.1f}s, decode {timings.get('decode_seconds', 0):.1f}s"
+        )
 
+    if not file_metrics:
+        print('No new images decoded (all skipped).')
+        return
     avg_bpp = total_bits / total_pixels
     avg_psnr = sum(psnrs) / len(psnrs)
     avg_ssim = sum(ssims) / len(ssims)

@@ -86,6 +86,34 @@ def test_detection_mask_and_image_transform_stay_aligned(tmp_path):
     assert np.allclose((sample["jpg"] + 1.0) / 2.0, sample["hint"], atol=1e-6)
 
 
+def test_processing_resize_keeps_image_and_mask_aligned(tmp_path):
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(_row(illumination="day")) + "\n", encoding="utf-8")
+    pixels = np.zeros((2000, 2592, 3), dtype=np.uint8)
+    pixels[800:1000, 1200:1400] = 255  # the "animal"
+    image_path = tmp_path / "images" / "snapshot_kgalagadi" / "a.jpg"
+    image_path.parent.mkdir(parents=True)
+    Image.fromarray(pixels).save(image_path, quality=100)
+    detections = tmp_path / "detections.jsonl"
+    detections.write_text(json.dumps({
+        "image_id": "KGA:img1",
+        "detections": [{"category": "1", "conf": 0.9,
+                        "bbox": [1200 / 2592, 800 / 2000, 200 / 2592, 200 / 2000]}],
+    }) + "\n", encoding="utf-8")
+    dataset = CameraTrapDataset(
+        str(manifest), str(tmp_path / "images"), split="train", out_size=256,
+        crop_type="random", detections_path=str(detections),
+        bbox_crop_probability=1.0, use_hflip=False, processing_long_side=1024,
+    )
+    random.seed(3)
+    sample = dataset[0]
+    mask = sample["roi_mask"][..., 0] > 0.5
+    # 200 px at 2592 wide becomes ~79 px at 1024 wide.
+    assert 0 < mask.sum() <= 80 * 80
+    assert sample["hint"][mask].mean() > 0.95
+    assert sample["hint"][~mask].mean() < 0.05
+
+
 def test_site_and_split_filtering(tmp_path):
     rows = [
         _row(),

@@ -101,11 +101,18 @@ MyDrive/wild_diff_icmh/
 
 - `inference_partition.py`: truyền `--config <run>/config_model.yaml` (tự chọn nếu file nằm
   cạnh checkpoint) để dựng đúng kiến trúc lúc train.
-- **Khi có `--manifest` mà không có `--crop-size`, decode và evaluate tự cắt ô 256×256 ở giữa
-  ảnh** (để tránh hết VRAM: ảnh 2592×2000 cần ~26 GiB cho attention của VAE). Số liệu khi đó chỉ
-  đại diện ~1,3% diện tích ảnh. Số báo cáo phải theo giao thức end-to-end ở độ phân giải gốc
-  (REQUIREMENTS EVAL-11), sẽ được thêm vào code ở Phase 2.
-- `tools/evaluate_kgalagadi.py` phải dùng cùng `--crop-size` với lúc decode; tính bpp từ kích
+- **Giao thức báo cáo (EVAL-11, từ Phase 2):** khi có `--manifest` mà không có `--crop-size`,
+  decode thu nhỏ ảnh về cạnh dài 1024 (`--processing-long-side`), nén, giải mã, rồi phóng ảnh tái
+  tạo về **kích thước gốc** 2592×2000 trước khi lưu; bpp tính trên số pixel ảnh gốc. Ảnh gốc đầy đủ
+  cần ~26 GiB VRAM nên không nén thẳng ở độ phân giải gốc.
+- `--crop-size 256` chỉ còn cho smoke test (Bước 9), không dùng cho số báo cáo; không dùng chung
+  với `--processing-long-side`.
+- Mỗi thư mục output decode là một kho lưu trữ (EVAL-12): `<ảnh>.png` (kích thước gốc),
+  `data/<ảnh>` (bitstream), `decode_log.jsonl` (byte, kích thước, thời gian encode/decode từng ảnh)
+  và `run_info.json` (giao thức, checkpoint, seed, commit). Phiên Colab bị ngắt thì chạy lại cùng lệnh
+  với `--skip-existing`; mỗi ảnh có seed riêng nên kết quả không phụ thuộc ảnh nào đã bỏ qua.
+- `tools/evaluate_kgalagadi.py` chỉ cắt khi có `--crop-size` (phải trùng lúc decode); mặc định so
+  với ảnh gốc; tính bpp từ kích
   thước file bitstream thật; `--results-registry` ghi/thay dòng cùng `exp_id` (idempotent).
 - Bước 9 chỉ decode 2 ảnh với 5 bước DDIM: là kiểm tra end-to-end, **không phải số báo cáo**.
 

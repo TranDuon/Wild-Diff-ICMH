@@ -16,6 +16,8 @@ import numpy as np
 from PIL import Image
 import torch.utils.data as data
 
+from utils.image_geometry import resize_for_processing, scale_boxes
+
 
 def _load_jsonl(path: Path) -> List[dict]:
     rows = []
@@ -197,6 +199,7 @@ class CameraTrapDataset(data.Dataset):
         include_season_in_prompt: bool = True,
         habitat_map: Optional[str] = None,
         domain_metadata_bits: int = 8,
+        processing_long_side: Optional[int] = None,
     ) -> None:
         super().__init__()
         if split not in {"train", "val", "test"}:
@@ -205,12 +208,17 @@ class CameraTrapDataset(data.Dataset):
             raise ValueError(f"invalid crop_type {crop_type!r}")
         if not 0.0 <= bbox_crop_probability <= 1.0:
             raise ValueError("bbox_crop_probability must be in [0, 1]")
+        if processing_long_side is not None and int(processing_long_side) <= 0:
+            raise ValueError("processing_long_side must be positive")
 
         self.manifest_path = Path(manifest_path)
         self.data_root = Path(data_root)
         self.split = split
         self.out_size = int(out_size)
         self.crop_type = crop_type
+        # INFRA-01/EVAL-11: crops come from the frame at the coding resolution so
+        # animals have the same pixel size in training and in evaluation.
+        self.processing_long_side = int(processing_long_side) if processing_long_side else None
         self.site_id = site_id
         self.min_detection_confidence = float(min_detection_confidence)
         self.bbox_crop_probability = float(bbox_crop_probability)
@@ -319,6 +327,12 @@ class CameraTrapDataset(data.Dataset):
         image_path = self.data_root / Path(row["relative_path"])
         image = self._open_image(image_path)
         boxes = self._boxes_for(row, *image.size)
+        resized = resize_for_processing(image, self.processing_long_side)
+        if resized.size != image.size:
+            boxes = scale_boxes(
+                boxes, resized.width / image.width, resized.height / image.height
+            )
+            image = resized
         source, roi_mask = self._joint_transform(image, boxes)
         target = (source * 2.0 - 1.0).astype(np.float32)
         tag_record = self.tags.get(str(row["image_id"]), {})

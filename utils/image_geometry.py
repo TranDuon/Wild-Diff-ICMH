@@ -7,26 +7,66 @@ from PIL import Image
 
 
 Box = Tuple[float, float, float, float]
-CAMERA_TRAP_CROP_SIZE = 256
+# EVAL-11: camera-trap images are coded at this long side and evaluated at their
+# original resolution.  Full 2592x2000 frames need ~26 GiB for the VAE attention.
+DEFAULT_PROCESSING_LONG_SIDE = 1024
+# Downscale before coding and upscale after decoding with the same filter so the
+# protocol is reproducible; PIL's BICUBIC antialiases when it shrinks.
+PROCESSING_RESAMPLING = "PIL.BICUBIC"
 
 
-def resolve_crop_size(
-    requested_crop_size: int | None,
+def resolve_geometry(
+    crop_size: int | None,
+    processing_long_side: int | None,
     *,
     manifest_supplied: bool,
-) -> int | None:
-    """Use the project crop for manifest-backed camera-trap commands.
+) -> Tuple[int | None, int | None]:
+    """Return ``(crop_size, processing_long_side)`` for one decode/evaluate run.
 
-    This fallback keeps already-open Colab cells safe after ``git pull``:
-    their visible command text does not refresh, but the pulled CLI still
-    adopts the same 256×256 protocol.  Non-manifest usage retains the legacy
-    full-resolution behavior unless a crop is explicitly requested.
+    A center crop is a smoke-test protocol and must be requested explicitly.
+    Manifest-backed camera-trap runs otherwise use the original-resolution
+    protocol at ``DEFAULT_PROCESSING_LONG_SIDE``; other inputs keep the legacy
+    full-resolution behavior.
     """
-    if requested_crop_size is not None:
-        if requested_crop_size <= 0:
+    if crop_size is not None and processing_long_side is not None:
+        raise ValueError("use either crop_size or processing_long_side, not both")
+    if crop_size is not None:
+        if crop_size <= 0:
             raise ValueError("crop_size must be positive")
-        return requested_crop_size
-    return CAMERA_TRAP_CROP_SIZE if manifest_supplied else None
+        return crop_size, None
+    if processing_long_side is not None:
+        if processing_long_side <= 0:
+            raise ValueError("processing_long_side must be positive")
+        return None, processing_long_side
+    return (None, DEFAULT_PROCESSING_LONG_SIDE) if manifest_supplied else (None, None)
+
+
+def processing_size(width: int, height: int, long_side: int | None) -> Tuple[int, int]:
+    """Size at which an image is coded: shrink so the long side fits, never enlarge."""
+    if width <= 0 or height <= 0:
+        raise ValueError("image dimensions must be positive")
+    if long_side is None or max(width, height) <= long_side:
+        return width, height
+    scale = long_side / max(width, height)
+    return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
+
+
+def resize_for_processing(image: Image.Image, long_side: int | None) -> Image.Image:
+    size = processing_size(image.width, image.height, long_side)
+    if size == image.size:
+        return image
+    return image.resize(size, Image.Resampling.BICUBIC)
+
+
+def restore_original_size(image: Image.Image, size: Tuple[int, int]) -> Image.Image:
+    """Upscale a decoded image back to the original frame for evaluation."""
+    if image.size == tuple(size):
+        return image
+    return image.resize(tuple(size), Image.Resampling.BICUBIC)
+
+
+def scale_boxes(boxes: Iterable[Box], scale_x: float, scale_y: float) -> list[Box]:
+    return [(x * scale_x, y * scale_y, w * scale_x, h * scale_y) for x, y, w, h in boxes]
 
 
 def center_crop_geometry(
