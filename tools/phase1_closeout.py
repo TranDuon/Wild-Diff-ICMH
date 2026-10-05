@@ -77,8 +77,8 @@ def _validate_registry(rows: list[dict], exp_id: str) -> dict:
     if missing_metrics:
         raise RuntimeError(f"smoke result is missing metrics: {missing_metrics}")
     identities = [
-        tuple(row.get(field) for field in (
-            "exp_id", "dataset", "lambda_rate", "illumination", "ddim_steps", "metric"
+        tuple(row.get(field, "all" if field == "subset" else None) for field in (
+            "exp_id", "dataset", "lambda_rate", "illumination", "subset", "ddim_steps", "metric"
         ))
         for row in experiment_rows
     ]

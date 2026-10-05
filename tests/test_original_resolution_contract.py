@@ -39,3 +39,13 @@ def test_evaluator_never_crops_unless_asked():
     source = (ROOT / "tools" / "evaluate_kgalagadi.py").read_text(encoding="utf-8")
     assert "resolve_geometry(args.crop_size, None, manifest_supplied=False)" in source
     assert "resolve_crop_size" not in source
+
+
+def test_evaluator_reports_eval13_metrics_with_protocol_and_ci():
+    source = (ROOT / "tools" / "evaluate_kgalagadi.py").read_text(encoding="utf-8")
+    for metric in ("ssim_fullres", "ms_ssim", "dists", "encode_seconds", "decode_seconds"):
+        assert f'"{metric}"' in source
+    assert "bootstrap_ci(" in source
+    assert "stratified_groups(" in source
+    assert "protocol=protocol" in source
+    assert 'row.get("illumination_ir")' in source
