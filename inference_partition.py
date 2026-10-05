@@ -459,15 +459,6 @@ def main() -> None:
     if args.tag_cache:
         # The cache supplies exactly the RAM++ ids; never instantiate RAM++.
         model_config.params.preprocess_tag_config.params.enabled = False
-    model: DiffEIC = instantiate_from_config(model_config)
-    # Loading sequentially keeps peak host RAM low enough for Colab.  The
-    # project checkpoint deliberately overwrites matching base-SD weights.
-    _load_checkpoint(model, args.ckpt_sd, "Stable Diffusion")
-    _load_checkpoint(model, args.ckpt_lc, "Diff-ICMH")
-    # update preprocess model
-    model.preprocess_model.update(force=True)
-    model.freeze()
-    model.to(args.device)
     anchor_prior_strength = args.anchor_prior_strength
 
     bpps = []
@@ -554,30 +545,47 @@ def main() -> None:
                     continue  # a line cut by a dead runtime is decoded again
     _write_run_info(args, model_config)
 
-    # Intialize the LPIPS model
-    lpips = LPIPS('alex').to(args.device)
-    print(f"sampling {args.steps} steps using {args.sampler} sampler")
     if selected_rows is None:
         file_paths = list_image_files(args.input, follow_links=True)
     else:
         file_paths = [os.path.join(args.input, row['relative_path']) for row in selected_rows]
     if args.limit is not None:
         file_paths = file_paths[:args.limit]
-    for file_path in file_paths:
+
+    def archive_paths(file_path):
+        relative = os.path.relpath(file_path, args.input).replace('\\', '/')
+        parent, stem, _ = get_file_name_parts(os.path.join(args.output, relative))
+        return relative, os.path.join(parent, f"{stem}.png"), os.path.join(parent, 'data', stem)
+
+    def already_decoded(file_path):
+        relative, png, stream = archive_paths(file_path)
+        return relative in logged_paths and os.path.isfile(png) and os.path.isfile(stream)
+
+    pending = [path for path in file_paths if not (args.skip_existing and already_decoded(path))]
+    print(f"{len(file_paths) - len(pending)} already decoded, {len(pending)} to decode")
+    if not pending:
+        # Building the model needs ~10 GB of host RAM; skip it when there is nothing to do.
+        print('Nothing to decode.')
+        return
+
+    model: DiffEIC = instantiate_from_config(model_config)
+    # Loading sequentially keeps peak host RAM low enough for Colab.  The
+    # project checkpoint deliberately overwrites matching base-SD weights.
+    _load_checkpoint(model, args.ckpt_sd, "Stable Diffusion")
+    _load_checkpoint(model, args.ckpt_lc, "Diff-ICMH")
+    # update preprocess model
+    model.preprocess_model.update(force=True)
+    model.freeze()
+    model.to(args.device)
+
+    # Intialize the LPIPS model
+    lpips = LPIPS('alex').to(args.device)
+    print(f"sampling {args.steps} steps using {args.sampler} sampler")
+    for file_path in pending:
         if not os.path.isfile(file_path):
             raise FileNotFoundError(file_path)
-        relative_file_path = os.path.relpath(file_path, args.input).replace('\\', '/')
-        save_path = os.path.join(args.output, relative_file_path)
-        parent_path, stem, _ = get_file_name_parts(save_path)
-        stream_parent_path = os.path.join(parent_path, 'data')
-        save_path = os.path.join(parent_path, f"{stem}.png")
-        stream_path = os.path.join(stream_parent_path, f"{stem}")
-        if (
-            args.skip_existing and relative_file_path in logged_paths
-            and os.path.isfile(save_path) and os.path.isfile(stream_path)
-        ):
-            print(f"skip (already decoded): {relative_file_path}")
-            continue
+        relative_file_path, save_path, stream_path = archive_paths(file_path)
+        parent_path, stream_parent_path = os.path.dirname(save_path), os.path.dirname(stream_path)
 
         # ``img`` is the evaluation reference: the original frame, or the smoke crop.
         img = Image.open(file_path).convert("RGB")

@@ -31,7 +31,9 @@ def test_decode_archives_protocol_timings_and_supports_resume():
     assert "_write_run_info(args, model_config)" in main
     assert "decode_log.jsonl" in main
     assert "'encode_seconds'" in main and "'decode_seconds'" in main
-    assert "args.skip_existing and relative_file_path in logged_paths" in main
+    assert "pending = [path for path in file_paths if not (args.skip_existing and already_decoded(path))]" in main
+    # the ~10 GB model is only built when something is left to decode
+    assert main.index("if not pending:") < main.index("instantiate_from_config(model_config)")
     assert "zlib.crc32(relative_file_path" in main
 
 

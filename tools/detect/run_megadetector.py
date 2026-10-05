@@ -95,6 +95,8 @@ def main(argv=None) -> int:
                 continue  # a line cut by a dead runtime is detected again
     pending = [row for row in rows if row["image_id"] not in done]
     print(f"{len(done)} already detected, {len(pending)} to go", flush=True)
+    if not pending:
+        return 0  # nothing left: do not download or load the detector
 
     model = pw_detection.MegaDetectorV6(device=args.device, pretrained=True, version=args.version)
     output.with_suffix(".info.json").write_text(json.dumps({
