@@ -233,7 +233,11 @@ cells = [
             shutil.rmtree(DETECT_ENV, ignore_errors=True)  # leftovers of a failed attempt
             run_logged([sys.executable, '-m', 'pip', 'install', '-q', 'virtualenv'], 'p2_detect_env.log')
             run_logged([sys.executable, '-m', 'virtualenv', '--system-site-packages', DETECT_ENV], 'p2_detect_env.log')
-            run_logged([DETECT_PY, '-m', 'pip', 'install', '-q', 'PytorchWildlife'], 'p2_detect_env.log')
+            # The env also sees Colab's transformers, which needs Colab's
+            # huggingface-hub (<1.0); PytorchWildlife's deps would otherwise pull 1.x.
+            import importlib.metadata
+            hub_pin = f"huggingface-hub=={importlib.metadata.version('huggingface_hub')}"
+            run_logged([DETECT_PY, '-m', 'pip', 'install', '-q', 'PytorchWildlife', hub_pin], 'p2_detect_env.log')
             run_logged([DETECT_PY, '-c', 'from PytorchWildlife.models import detection; print("PytorchWildlife OK")'],
                        'p2_detect_env.log')
             DETECT_READY.touch()

@@ -65,3 +65,4 @@ def test_detector_env_does_not_depend_on_ensurepip():
     assert "'-m', 'venv'" not in code
     assert "'-m', 'virtualenv', '--system-site-packages'" in code
     assert "DETECT_READY.touch()" in code
+    assert "'PytorchWildlife', hub_pin" in code
