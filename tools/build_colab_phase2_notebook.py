@@ -415,15 +415,18 @@ EVAL_CELLS = [
         | 1–3 | Drive (+ điền CU), code nhánh `phase2`, cài đặt | ~10 phút |
         | 4 | Chép 300 ảnh dev, kiểm tra kho B0, dựng MegaDetector | ~5 phút |
         | 5 | Thống kê miền | vài giây |
-        | 6 | Baseline JPEG/WebP (CPU) | ~10 phút |
-        | 7 | Baseline CompressAI (GPU) | ~10 phút |
-        | 8 | Chấm điểm mọi kho: chỉ số ảnh + MegaDetector | ~1,5–2 giờ |
+        | 6 | JPEG/WebP: nén (CPU) rồi chấm từng điểm (15 điểm) | ~1 giờ |
+        | 7 | CompressAI: nén rồi chấm từng điểm (18 điểm) | ~1,5 giờ |
+        | 8 | Chấm 6 kho B0 (và điểm nào còn sót) | ~20 phút |
         | 9 | Đồ thị RD | vài giây |
         | 10 | Tóm tắt để gửi lại | vài giây |
-        | 11 | Ghi CU đo thật, rồi ngắt runtime | — |
+        | 11 | Ghi phiên, đẩy dữ liệu lên Drive, **tự ngắt runtime** | vài giây |
 
-        Runtime bị ngắt giữa chừng: mở lại notebook, chạy lại **từ Bước 1** — phần đã xong tự bỏ qua
-        (điểm đã chấm không nén/chấm lại). Kết quả: `MyDrive/wild_diff_icmh/phase2/` và `results/results.jsonl`.
+        Có thể bấm **Runtime → Run all** rồi để máy chạy: Bước 11 tự ngắt runtime khi xong (đặt
+        `AUTO_DISCONNECT = False` ở Bước 11 nếu không muốn). Mỗi điểm được chấm và ghi lên Drive **ngay sau
+        khi nén xong**, nên runtime bị ngắt giữa chừng chỉ mất điểm đang làm dở: mở lại notebook, chạy lại
+        **từ Bước 1** — điểm đã chấm tự bỏ qua. Kết quả: `MyDrive/wild_diff_icmh/phase2/` và
+        `results/results.jsonl`.
         """
     ),
     *_reused(["Bước 1 ", "Bước 2 ", "Bước 3 "]),
@@ -433,7 +436,7 @@ EVAL_CELLS = [
 
         Chỉ chép **300 ảnh dev** (~250 MB) từ Drive — không cần 10.222 ảnh hay checkpoint. Kiểm tra các kết quả của
         notebook Prepare (nhãn ngày/đêm, tập dev, MegaDetector trên ảnh gốc, kho B0) và in số ảnh B0 đã decode.
-        Dựng môi trường MegaDetector riêng cho Bước 8.
+        Dựng môi trường MegaDetector riêng và hàm `score_archive` chấm một kho (dùng ở Bước 6, 7, 8).
         """
     ),
     code(
@@ -497,6 +500,75 @@ EVAL_CELLS = [
                   + ('' if done == len(requested) else '  ← CHƯA ĐỦ'))
 
         __DETECT_ENV__
+
+        try:
+            import pycocotools  # noqa: F401
+        except ImportError:
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'pycocotools'], check=True)
+
+        import tarfile
+
+
+        def pack_bitstreams(root, curve, point):
+            # One file on Drive per point instead of hundreds of small writes.
+            target = BITSTREAMS / curve / f'{point}.tar'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(target, 'w') as bundle:
+                for path in sorted(root.rglob('*')):
+                    if path.is_file() and (path.parent.name == 'data' or path.name in ('decode_log.jsonl', 'run_info.json')):
+                        bundle.add(path, arcname=path.relative_to(root).as_posix())
+
+
+        def score_archive(root):
+            # Image metrics + MegaDetector for one archive <curve>/<point>; results reach Drive at once.
+            root = Path(root)
+            run_info = root / 'run_info.json'
+            if not run_info.is_file():
+                return  # baseline point already scored (local folder removed) or never coded
+            curve, point = root.parent.name, root.name
+            name = f'{curve}__{point}'
+            image_eval = EVAL_DIR / f'{name}.jsonl'
+            machine_eval = EVAL_DIR / f'{name}.machine.json'
+            archived = sum(1 for line in (root / 'decode_log.jsonl').read_text().splitlines() if line.strip())
+            done_marker = EVAL_DIR / f'{name}.done.json'
+            if done_marker.is_file() and json.loads(done_marker.read_text())['images'] >= archived:
+                print('Đã chấm:', name, f'({archived} ảnh)')
+                return
+            info = json.loads(run_info.read_text())
+            # Score the image set this archive was asked for (a B0 subset), never
+            # leftovers of an earlier, differently sized run in the same folder.
+            archive_dev = info.get('dev_list') or DEV_LIST
+            common = ['--manifest', MANIFEST, '--split', 'val', '--dev-list', archive_dev,
+                      '--illumination-sidecar', ILLUMINATION]
+            run_logged([
+                sys.executable, '-u', 'tools/evaluate_kgalagadi.py', *common,
+                '--data-root', LOCAL_IMAGES, '--reconstruction-root', root,
+                '--detections', DETECTIONS, '--method', curve, '--lpips', '--dists', '--archived-only',
+                '--output', image_eval, '--results-registry', RESULTS_REGISTRY,
+                '--exp-id', f'p2dev_{name}', '--lambda-rate', point,
+                '--ddim-steps', info.get('steps', 0),
+            ], f'p2_eval_{name}.log', echo=False)
+            predictions = DETECTIONS.parent / f'{name}.jsonl'
+            run_logged([
+                DETECT_PY, '-u', 'tools/detect/run_megadetector.py', '--manifest', MANIFEST,
+                '--split', 'val', '--dev-list', archive_dev, '--image-root', root, '--suffix', '.png', '--archived-only',
+                '--output', predictions,
+            ], f'p2_megadetector_{name}.log', echo=False)
+            run_logged([
+                sys.executable, '-u', 'tools/eval_machine.py', *common,
+                '--gt', DETECTIONS, '--pred', predictions, '--output', machine_eval, '--archived-only',
+                '--results-registry', RESULTS_REGISTRY, '--exp-id', f'p2dev_{name}',
+                '--method', curve, '--lambda-rate', point, '--ddim-steps', info.get('steps', 0),
+            ], f'p2_machine_{name}.log', echo=False)
+            baseline = BASELINE_ROOT in root.parents
+            if baseline:
+                pack_bitstreams(root, curve, point)  # before the marker: a crash here re-scores, never loses the tar
+            done_marker.write_text(json.dumps({'images': archived}))
+            if baseline:
+                shutil.rmtree(root)  # ~3 GB of PNGs per point; reproducible from the bitstream tar
+            print('Đã chấm:', name, f'({archived} ảnh)')
+
+
         print('Sẵn sàng.')
         """
     ),
@@ -518,8 +590,9 @@ EVAL_CELLS = [
 
         Ảnh tái tạo của baseline (~10 MB/ảnh PNG) ghi vào ổ cục bộ `/content/p2_baselines`, **không ghi lên
         Drive** — ghi hàng chục GB lên Drive làm Colab bị chặn ("Google Drive quota exceeded"). Chúng tính lại
-        được từ bitstream trong vài giây; sau khi chấm (Bước 8), chỉ bitstream được gói thành một file `.tar`
-        lên Drive. Điểm nào đã chấm thì bỏ qua cả bước nén.
+        được từ bitstream trong vài giây. Mỗi điểm được **chấm ngay khi nén xong** (`score_archive`): kết quả
+        lên Drive, bitstream gói thành một file `.tar` lên Drive, ảnh cục bộ bị xoá. Điểm nào đã chấm thì bỏ qua
+        cả bước nén.
         """
     ),
     code(
@@ -548,7 +621,7 @@ EVAL_CELLS = [
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             for curve, quality in pool.map(run_classical, CLASSICAL):
-                print('Xong', curve, 'q', quality)
+                score_archive(BASELINE_ROOT / curve / f'q{quality}')
         """
     ),
     markdown(
@@ -556,7 +629,16 @@ EVAL_CELLS = [
         ## Bước 7 — Baseline CompressAI (GPU, nhẹ)
 
         `bmshj2018-hyperprior` (họ codec của bài Xie 2025), `mbt2018`, `cheng2020-attn`, chất lượng 1–3,
-        ở cạnh dài 1024 và 512; entropy coding thật, bitstream ghi ra file.
+        ở cạnh dài 1024 và 512.
+
+        - `bmshj2018-hyperprior`: entropy coding thật, bitstream ghi ra file.
+        - `mbt2018`, `cheng2020-attn` là model **tự hồi quy**: entropy coder của chúng chạy từng vị trí latent
+          một (~29 s/ảnh ở 1024 — lần chạy 05/10 mất ~2,4 giờ cho một điểm và runtime bị ngắt trước khi kịp
+          chấm). Ở đây chúng chạy một lượt forward và bpp = tổng −log2 likelihood (chế độ
+          `--entropy-estimation` của CompressAI), ghi `rate: estimated` trong `run_info.json` và registry.
+          Chênh lệch với bitstream thật chỉ là vài byte header mỗi ảnh.
+
+        Mỗi điểm được chấm ngay khi nén xong.
         """
     ),
     code(
@@ -572,81 +654,25 @@ EVAL_CELLS = [
                     '--model', model, '--quality', quality, '--processing-long-side', side,
                     '--output', BASELINE_ROOT / curve / f'q{quality}', '--skip-existing',
                 ], f'p2_{curve}_q{quality}.log', echo=False)
-                print('Xong', curve, 'q', quality)
+                score_archive(BASELINE_ROOT / curve / f'q{quality}')
         """
     ),
     markdown(
         """
-        ## Bước 8 — Chấm điểm mọi kho lưu trữ
+        ## Bước 8 — Chấm các kho B0 (và điểm baseline còn sót)
 
-        Với mỗi kho B0 trên Drive (`phase2/archive/B0_*/<điểm>/`) và mỗi kho baseline trên ổ cục bộ: chỉ số ảnh (PSNR, SSIM ×2, MS-SSIM, LPIPS, DISTS, bpp,
-        compression ratio, thời gian) + MegaDetector trên ảnh tái tạo → mAP, ảnh rỗng báo nhầm, ảo giác,
-        mất con vật. Tất cả ghi vào `results/results.jsonl` với `exp_id = p2dev_<đường>__<điểm>`.
-        Chỉ chấm đúng các ảnh đã có trong kho (`decode_log.jsonl`); kho đã chấm thì bỏ qua, trừ khi kho
-        có thêm ảnh từ sau lần chấm trước (ví dụ B0 được decode thêm) — khi đó chấm lại.
+        Với mỗi kho B0 trên Drive (`phase2/archive/B0_*/<điểm>/`) và mỗi kho baseline còn trên ổ cục bộ:
+        chỉ số ảnh (PSNR, SSIM ×2, MS-SSIM, LPIPS, DISTS, bpp, compression ratio, thời gian) + MegaDetector trên
+        ảnh tái tạo → mAP, ảnh rỗng báo nhầm, ảo giác, mất con vật. Tất cả ghi vào `results/results.jsonl` với
+        `exp_id = p2dev_<đường>__<điểm>`. Chỉ chấm đúng các ảnh đã có trong kho (`decode_log.jsonl`); kho đã
+        chấm thì bỏ qua, trừ khi kho có thêm ảnh từ sau lần chấm trước (ví dụ B0 được decode thêm).
         """
     ),
     code(
         """
-        try:
-            import pycocotools  # noqa: F401
-        except ImportError:
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'pycocotools'], check=True)
-
-        import tarfile
-
-        def pack_bitstreams(root, curve, point):
-            # One file on Drive per point instead of hundreds of small writes.
-            target = BITSTREAMS / curve / f'{point}.tar'
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(target, 'w') as bundle:
-                for path in sorted(root.rglob('*')):
-                    if path.is_file() and (path.parent.name == 'data' or path.name in ('decode_log.jsonl', 'run_info.json')):
-                        bundle.add(path, arcname=path.relative_to(root).as_posix())
-
         archives = sorted(ARCHIVE.glob('B0_*/*/run_info.json')) + sorted(BASELINE_ROOT.glob('*/*/run_info.json'))
         for run_info in archives:
-            root = run_info.parent
-            curve, point = root.parent.name, root.name
-            name = f'{curve}__{point}'
-            image_eval = EVAL_DIR / f'{name}.jsonl'
-            machine_eval = EVAL_DIR / f'{name}.machine.json'
-            archived = sum(1 for line in (root / 'decode_log.jsonl').read_text().splitlines() if line.strip())
-            done_marker = EVAL_DIR / f'{name}.done.json'
-            if done_marker.is_file() and json.loads(done_marker.read_text())['images'] >= archived:
-                print('Đã chấm:', name, f'({archived} ảnh)')
-                continue
-            info = json.loads(run_info.read_text())
-            # Score the image set this archive was asked for (a B0 subset), never
-            # leftovers of an earlier, differently sized run in the same folder.
-            archive_dev = info.get('dev_list') or DEV_LIST
-            common = ['--manifest', MANIFEST, '--split', 'val', '--dev-list', archive_dev,
-                      '--illumination-sidecar', ILLUMINATION]
-            run_logged([
-                sys.executable, '-u', 'tools/evaluate_kgalagadi.py', *common,
-                '--data-root', LOCAL_IMAGES, '--reconstruction-root', root,
-                '--detections', DETECTIONS, '--method', curve, '--lpips', '--dists', '--archived-only',
-                '--output', image_eval, '--results-registry', RESULTS_REGISTRY,
-                '--exp-id', f'p2dev_{name}', '--lambda-rate', point,
-                '--ddim-steps', info.get('steps', 0),
-            ], f'p2_eval_{name}.log', echo=False)
-            predictions = DETECTIONS.parent / f'{name}.jsonl'
-            run_logged([
-                DETECT_PY, '-u', 'tools/detect/run_megadetector.py', '--manifest', MANIFEST,
-                '--split', 'val', '--dev-list', archive_dev, '--image-root', root, '--suffix', '.png', '--archived-only',
-                '--output', predictions,
-            ], f'p2_megadetector_{name}.log', echo=False)
-            run_logged([
-                sys.executable, '-u', 'tools/eval_machine.py', *common,
-                '--gt', DETECTIONS, '--pred', predictions, '--output', machine_eval, '--archived-only',
-                '--results-registry', RESULTS_REGISTRY, '--exp-id', f'p2dev_{name}',
-                '--method', curve, '--lambda-rate', point, '--ddim-steps', info.get('steps', 0),
-            ], f'p2_machine_{name}.log', echo=False)
-            done_marker.write_text(json.dumps({'images': archived}))
-            if BASELINE_ROOT in root.parents:
-                pack_bitstreams(root, curve, point)
-                shutil.rmtree(root)  # ~3 GB of PNGs per point; reproducible from the bitstream tar
-            print('Đã chấm:', name, f'({archived} ảnh)')
+            score_archive(run_info.parent)
         """
     ),
     markdown(
@@ -724,31 +750,42 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 11 — Ghi CU đo thật của phiên
+        ## Bước 11 — Ghi phiên và tự ngắt runtime
 
-        Mở **Runtime → View resources**, chép số "Available" vào `CU_AVAILABLE_NOW`, chạy cell, rồi ngắt runtime.
+        Ghi giờ kết thúc (và CU nếu đã điền) vào `phase2/sessions.jsonl`, đẩy hết dữ liệu lên Drive, rồi
+        **ngắt runtime** để ngừng tiêu CU (`AUTO_DISCONNECT = False` để giữ runtime). Không cần điền CU trước khi
+        chạy: sau đó mở trang Colab (Runtime → View resources) và gửi số "Available".
         """
     ),
     code(
         """
         from datetime import datetime, timezone
 
-        CU_AVAILABLE_NOW = None  # số "Available" ngay lúc này
+        CU_AVAILABLE_NOW = None  # số "Available" lúc này, nếu đang ngồi máy; để None cũng được
+        AUTO_DISCONNECT = True
 
-        if CU_AVAILABLE_AT_START is None or CU_AVAILABLE_NOW is None:
-            raise ValueError('Điền CU_AVAILABLE_AT_START (Bước 1) và CU_AVAILABLE_NOW rồi chạy lại cell.')
         session = {
             'date': datetime.now(timezone.utc).isoformat(),
-            'gpu': torch.cuda.get_device_name(0),
-            'cu_start': float(CU_AVAILABLE_AT_START),
-            'cu_end': float(CU_AVAILABLE_NOW),
-            'cu_consumed': float(CU_AVAILABLE_AT_START) - float(CU_AVAILABLE_NOW),
+            'notebook': 'Wild_Diff_ICMH_Phase2_Eval',
+            'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+            'cu_start': None if CU_AVAILABLE_AT_START is None else float(CU_AVAILABLE_AT_START),
+            'cu_end': None if CU_AVAILABLE_NOW is None else float(CU_AVAILABLE_NOW),
             'git_commit': subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=REPO, text=True).strip(),
         }
+        if session['cu_start'] is not None and session['cu_end'] is not None:
+            session['cu_consumed'] = session['cu_start'] - session['cu_end']
         with (P2 / 'sessions.jsonl').open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(session) + chr(10))
         print(session)
-        print('Ngắt runtime ngay (Runtime → Disconnect and delete runtime) để ngừng tiêu CU.')
+
+        if AUTO_DISCONNECT:
+            from google.colab import drive, runtime
+
+            drive.flush_and_unmount()  # make sure every result has reached Drive
+            print('Đã đẩy dữ liệu lên Drive. Ngắt runtime.')
+            runtime.unassign()
+        else:
+            print('Nhớ ngắt runtime (Runtime → Disconnect and delete runtime) để ngừng tiêu CU.')
         """
     ),]
 

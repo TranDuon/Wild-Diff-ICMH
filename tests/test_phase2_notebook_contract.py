@@ -83,6 +83,24 @@ def test_baseline_reconstructions_stay_off_drive_and_are_scored_once():
     assert "if scored(curve, f'q{quality}'):" in code
 
 
+def test_each_baseline_point_is_scored_as_soon_as_it_is_coded():
+    cells = [cell["source"] for cell in _cells(EVAL) if cell["cell_type"] == "code"]
+    defining = [index for index, source in enumerate(cells) if "def score_archive(root):" in source]
+    callers = [index for index, source in enumerate(cells) if "score_archive(BASELINE_ROOT / curve / f'q{quality}')" in source]
+    assert len(defining) == 1 and len(callers) == 2 and defining[0] < min(callers)
+    assert any("score_archive(run_info.parent)" in source for source in cells)
+    code = _code(EVAL)
+    # the bitstream tar is on Drive before a point is marked done
+    assert code.index("pack_bitstreams(root, curve, point)  # before") < code.index("done_marker.write_text(")
+
+
+def test_last_cell_records_the_session_and_disconnects_without_raising():
+    last = [cell["source"] for cell in _cells(EVAL) if cell["cell_type"] == "code"][-1]
+    assert "raise" not in last
+    assert "AUTO_DISCONNECT = True" in last
+    assert last.index("drive.flush_and_unmount()") < last.index("runtime.unassign()")
+
+
 def test_partial_archives_are_scored_on_their_dev_list_and_rescored_when_they_grow():
     code = _code(EVAL)
     assert code.count("'--archived-only'") == 3

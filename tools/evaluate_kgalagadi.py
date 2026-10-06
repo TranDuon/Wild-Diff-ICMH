@@ -233,7 +233,12 @@ def main(argv=None):
         source_path = data_root / relative
         reconstructed_path = (reconstruction_root / relative).with_suffix(".png")
         stream_path = reconstructed_path.parent / "data" / reconstructed_path.stem
-        if not source_path.is_file() or not reconstructed_path.is_file() or not stream_path.is_file():
+        timing = decode_log.get(relative.as_posix(), {})
+        # Autoregressive CompressAI models log an estimated rate instead of a file.
+        estimated = timing.get("estimated_bits") if not stream_path.is_file() else None
+        if not source_path.is_file() or not reconstructed_path.is_file() or (
+            not stream_path.is_file() and estimated is None
+        ):
             raise FileNotFoundError(
                 f"missing source/reconstruction/bitstream for {row['image_id']}: "
                 f"{source_path}, {reconstructed_path}, {stream_path}"
@@ -258,9 +263,8 @@ def main(argv=None):
                 boxes, original_width, original_height, args.crop_size
             )
         mask = _mask_from_boxes(width, height, boxes)
-        bitstream_bytes = stream_path.stat().st_size
+        bitstream_bytes = stream_path.stat().st_size if estimated is None else estimated / 8
         bpp = bitstream_bytes * 8 / (height * width)
-        timing = decode_log.get(relative.as_posix(), {})
         with torch.no_grad():
             result = {
                 "schema_version": 2,
@@ -286,6 +290,7 @@ def main(argv=None):
                 "decode_seconds": timing.get("decode_seconds"),
                 "coded_size": timing.get("coded_size"),
                 "bitstream_bytes": bitstream_bytes,
+                "rate_source": "coded" if estimated is None else "estimated",
                 "width": width,
                 "height": height,
             }
@@ -326,6 +331,7 @@ def main(argv=None):
             "pyiqa": _version("pyiqa"), "pytorch_msssim": _version("pytorch-msssim"),
         },
         "compression_ratio": "24*H*W / bitstream bits, H and W of the evaluation reference",
+        "rate": run_info.get("rate", "coded"),
         "bootstrap": f"{args.bootstrap_resamples} resamples, site clusters when >1 site",
         "dev_list": args.dev_list,
         "illumination_labels": illumination_labels,

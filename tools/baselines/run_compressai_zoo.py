@@ -1,8 +1,19 @@
 """Pretrained CompressAI codecs on the EVAL-11 protocol (EVAL-14), inference only.
 
-Real entropy coding: ``model.compress`` produces the strings that are written
-to ``data/<stem>``, and the reconstruction comes from ``model.decompress`` of
-those bytes, so bpp counts every transmitted byte (shape header included).
+Rate, ``--rate coded`` (default for the hyperprior models): ``model.compress``
+produces the strings that are written to ``data/<stem>``, and the
+reconstruction comes from ``model.decompress`` of those bytes, so bpp counts
+every transmitted byte (shape header included).
+
+``--rate estimated`` (default for the autoregressive ``mbt2018`` and
+``cheng2020-attn``): their entropy coder walks the latent one position at a
+time (~29 s per 1024-px image on an L4, ~12 h for the dev sweep), so they are
+run as one forward pass and the rate is the sum of -log2 likelihoods -- the
+``--entropy-estimation`` mode of CompressAI's own ``eval_model``.  No bitstream
+file is written; ``decode_log.jsonl`` carries ``estimated_bits`` and
+``run_info.json`` says ``rate: estimated``.  Coded files are larger by a few
+header bytes per image, i.e. <0.0001 bpp at 2592x2000.
+
 Archive layout is identical to ``inference_partition.py`` and
 ``run_classical.py``.  ``bmshj2018-hyperprior`` is the codec family used by the
 comparison candidate Xie et al. 2025, pretrained on generic images.
@@ -27,6 +38,7 @@ from tools.baselines.run_classical import load_rows
 from utils.image_geometry import PROCESSING_RESAMPLING, resize_for_processing, restore_original_size
 
 MODELS = ("bmshj2018-hyperprior", "mbt2018", "cheng2020-attn")
+AUTOREGRESSIVE = ("mbt2018", "cheng2020-attn")
 MAGIC = b"CAZ1"
 PAD = 64  # every zoo model downsamples by at most 64
 
@@ -57,6 +69,19 @@ def unpack(payload: bytes):
     return strings, (shape_h, shape_w), (width, height)
 
 
+def resolve_rate(model: str, rate: str) -> str:
+    if rate == "auto":
+        return "estimated" if model in AUTOREGRESSIVE else "coded"
+    return rate
+
+
+def estimated_bits(likelihoods) -> float:
+    """Ideal code length of every latent, in bits (sum of -log2 likelihood)."""
+    import torch
+
+    return float(sum(-torch.log2(values).sum() for values in likelihoods.values()))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default="data/manifests/kgalagadi_site_split.jsonl")
@@ -71,6 +96,8 @@ def main(argv=None) -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--skip-existing", action="store_true")
+    parser.add_argument("--rate", choices=("auto", "coded", "estimated"), default="auto",
+                        help="auto = estimated for autoregressive models, coded otherwise")
     args = parser.parse_args(argv)
 
     import compressai
@@ -80,6 +107,7 @@ def main(argv=None) -> int:
     from compressai.zoo import models as zoo
 
     torch.backends.cudnn.deterministic = True
+    rate = resolve_rate(args.model, args.rate)
     compressai.set_entropy_coder("ans")
 
     output = Path(args.output)
@@ -92,7 +120,8 @@ def main(argv=None) -> int:
         "metric": args.metric,
         "compressai": compressai.__version__,
         "torch": torch.__version__,
-        "entropy_coder": "ans",
+        "entropy_coder": "ans" if rate == "coded" else None,
+        "rate": rate,
         "protocol": "original_resolution",
         "processing_long_side": args.processing_long_side,
         "resampling": PROCESSING_RESAMPLING,
@@ -135,25 +164,37 @@ def main(argv=None) -> int:
             x_padded = F.pad(x, (0, pad_w, 0, pad_h), mode="replicate")
 
             started = sync()
-            compressed = net.compress(x_padded)
-            payload = pack(compressed["strings"], compressed["shape"], (width + pad_w, height + pad_h))
-            encoded = sync()
-            strings, shape, _ = unpack(payload)
-            x_hat = net.decompress(strings, shape)["x_hat"][..., :height, :width].clamp(0, 1)
+            if rate == "coded":
+                compressed = net.compress(x_padded)
+                payload = pack(compressed["strings"], compressed["shape"], (width + pad_w, height + pad_h))
+                encoded = sync()
+                strings, shape, _ = unpack(payload)
+                x_hat = net.decompress(strings, shape)["x_hat"]
+                bits = len(payload) * 8
+            else:
+                forward = net(x_padded)
+                payload, x_hat = None, forward["x_hat"]
+                bits = estimated_bits(forward["likelihoods"])
+                encoded = sync()
+            x_hat = x_hat[..., :height, :width].clamp(0, 1)
             decoded = sync()
 
             array = (x_hat[0].permute(1, 2, 0).cpu().numpy() * 255.0).round().astype("uint8")
             reconstruction = restore_original_size(Image.fromarray(array), original.size)
             target = output / Path(relative).with_suffix(".png")
-            stream = target.parent / "data" / target.stem
-            stream.parent.mkdir(parents=True, exist_ok=True)
-            stream.write_bytes(payload)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if payload is not None:
+                stream = target.parent / "data" / target.stem
+                stream.parent.mkdir(parents=True, exist_ok=True)
+                stream.write_bytes(payload)
             reconstruction.save(target, compress_level=1)
             log.write(json.dumps({
                 "relative_path": relative,
                 "image_id": row["image_id"],
-                "bitstream_bytes": len(payload),
-                "bpp": len(payload) * 8 / (original.width * original.height),
+                "rate": rate,
+                "bitstream_bytes": len(payload) if payload is not None else None,
+                "estimated_bits": None if payload is not None else bits,
+                "bpp": bits / (original.width * original.height),
                 "original_size": list(original.size),
                 "coded_size": list(coded.size),
                 "encode_seconds": encoded - started,
