@@ -31,7 +31,7 @@ Phase: 2 (Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline) �
 Plan: 6/6 code complete (05/10); chờ chạy `Wild_Diff_ICMH_Phase2_Eval.ipynb` trên Colab (kế hoạch: `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
 Status: Phase 1 hoàn thành 04/10/2026 (14/14, closeout thật trên L4). Còn 73,00 CU.
 Nhánh: `phase2` (đổi tên từ `ver2` ngày 05/10) chứa bằng chứng Phase 1 và toàn bộ Phase 2; chưa merge vào `main`. Hai notebook trên nhánh này clone `phase2`; khi merge phải đổi `BRANCH` về `main`.
-Last activity: 2026-09-16 - Completed quick task 260916-sxk: Bước 1 fine-tune camera trap (manifest dữ liệu + downloader + split_check)
+Last activity: 2026-10-06 - Completed quick task 261006-hxn: Phase 2 Eval notebook step 7 fix (estimated rate for autoregressive CompressAI, per-point scoring, auto-disconnect)
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -94,6 +94,7 @@ None yet.
 | 2 | Sắp xếp notebook Colab theo thứ tự và sửa dependency/progress | 2026-09-25 | 1b20124 | — |
 | 3 | Thêm cell pull cố định vào notebook Colab | 2026-09-27 | db097b4 | — |
 | 4 | Bước 7–10: run dir mới mỗi lần, ThroughputMonitor, CU đo thật vào closeout | 2026-10-04 | — | — |
+| 261006-hxn | Eval Phase 2: CompressAI tự hồi quy dùng rate ước lượng, chấm từng điểm ngay khi nén, Bước 11 tự ngắt runtime | 2026-10-06 | 4288862 | [261006-hxn-fix-phase2-eval-step7-compressai](./quick/261006-hxn-fix-phase2-eval-step7-compressai/) |
 
 ## Deferred Items
 
