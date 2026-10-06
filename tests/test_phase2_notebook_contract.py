@@ -28,22 +28,30 @@ def test_every_code_cell_compiles_and_has_no_placeholders(path):
 
 
 @pytest.mark.parametrize("path", [PREPARE, EVAL], ids=["prepare", "eval"])
-def test_notebooks_clone_the_phase2_branch_and_record_cu(path):
+def test_notebooks_clone_the_phase2_branch_and_never_ask_for_compute_units(path):
     code = _code(path)
     assert "BRANCH = 'phase2'" in code and "'ver2'" not in code
-    assert "CU_AVAILABLE_AT_START = None" in code
+    assert "CU_AVAILABLE" not in code and "sessions.jsonl" not in code
 
 
 def test_eval_is_one_linear_workflow_on_dev_images_only():
     headings = [cell["source"].splitlines()[0] for cell in _cells(EVAL) if cell["cell_type"] == "markdown"][1:]
     numbers = [int(heading.split("Bước ")[1].split()[0]) for heading in headings]
-    assert numbers == list(range(1, 12))
+    assert numbers == list(range(1, 11))
     code = _code(EVAL)
     assert "Bước 2A" not in "\n".join(headings)
     for heavy in ("tools/data/label_illumination.py", "inference_partition.py", "precompute_ram_tags.py",
                   "hf_hub_download", "RUN_B0"):
         assert heavy not in code
-    assert "Ảnh dev cục bộ" in code and "CU_AVAILABLE_NOW = None" in code
+    assert "Ảnh dev cục bộ" in code
+    assert "tools/data/domain_stats.py" not in code  # done once in Prepare (P2-4)
+
+
+def test_baselines_run_on_exactly_the_images_b0_decoded():
+    code = _code(EVAL)
+    assert "BASELINE_DEV = max(" in code
+    assert code.count("'--dev-list', BASELINE_DEV,") == 2
+    assert "'--dev-list', DEV_LIST," not in code
 
 
 def test_eval_uses_only_names_defined_by_earlier_cells():

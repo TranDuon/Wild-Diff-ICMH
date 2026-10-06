@@ -63,10 +63,28 @@ SNIPPETS = {
     """).strip(),
 }
 
+STEP1_CELLS = [
+    markdown("## Bước 1 — Gắn Google Drive (mỗi runtime mới)"),
+    code(
+        """
+        from google.colab import drive
+
+        drive.mount('/content/drive')
+        """
+    ),
+]
+
+
 def _reused(prefixes):
-    """Markdown heading cell + its code cell for every heading prefix, in order."""
+    """Markdown heading cell + its code cell for every heading prefix, in order.
+
+    Step 1 is Phase 2's own (Drive only): compute units are not recorded here.
+    """
     picked = []
     for prefix in prefixes:
+        if prefix == "Bước 1 ":
+            picked.extend(dict(cell) for cell in STEP1_CELLS)
+            continue
         for index, cell in enumerate(TRAINING_CELLS):
             source = cell["source"] if isinstance(cell["source"], str) else "".join(cell["source"])
             if cell["cell_type"] == "markdown" and source.lstrip("#").strip().startswith(prefix):
@@ -405,28 +423,29 @@ PREPARE_CELLS = [
 EVAL_CELLS = [
     markdown(
         """
-        # Wild-Diff-ICMH — Phase 2 (2/2): baseline, chấm điểm, đồ thị RD
+        # Wild-Diff-ICMH — Phase 2 (2/2): baseline và MegaDetector trước/sau decode
 
-        **Chạy lần lượt từ trên xuống, không bỏ cell nào.** Notebook `Wild_Diff_ICMH_Phase2_Prepare.ipynb`
-        (nhãn ngày/đêm, tập dev, MegaDetector trên ảnh gốc, decode B0) đã chạy xong; ở đây chỉ cần 300 ảnh dev.
+        Mục tiêu: (1) các baseline nén để so với B0, (2) MegaDetector trên ảnh **trước** (ảnh gốc) và **sau** khi
+        decode để so bbox vùng động vật — mAP, mất con vật, con vật "ảo". Mọi phương pháp được chấm trên **đúng
+        cùng các ảnh B0 đã decode** (100 ảnh dev, cạnh 512), nên so sánh là so cặp từng ảnh.
+
+        Notebook `Wild_Diff_ICMH_Phase2_Prepare.ipynb` (tập dev, MegaDetector trên ảnh gốc, decode B0) đã chạy xong.
 
         | Bước | Việc | Thời gian |
         |---|---|---|
-        | 1–3 | Drive (+ điền CU), code nhánh `phase2`, cài đặt | ~10 phút |
-        | 4 | Chép 300 ảnh dev, kiểm tra kho B0, dựng MegaDetector | ~5 phút |
-        | 5 | Thống kê miền | vài giây |
-        | 6 | JPEG/WebP: nén (CPU) rồi chấm từng điểm (15 điểm) | ~1 giờ |
-        | 7 | CompressAI: nén rồi chấm từng điểm (18 điểm) | ~1,5 giờ |
-        | 8 | Chấm 6 kho B0 (và điểm nào còn sót) | ~20 phút |
-        | 9 | Đồ thị RD | vài giây |
-        | 10 | Tóm tắt để gửi lại | vài giây |
-        | 11 | Ghi phiên, đẩy dữ liệu lên Drive, **tự ngắt runtime** | vài giây |
+        | 1–3 | Drive, code nhánh `phase2`, cài đặt | ~10 phút |
+        | 4 | Chép ảnh dev, kiểm tra kho B0, dựng MegaDetector | ~5 phút |
+        | 5 | JPEG/WebP: nén rồi chấm từng điểm (15 điểm) | ~20 phút |
+        | 6 | CompressAI: nén rồi chấm từng điểm (18 điểm) | ~30 phút |
+        | 7 | Chấm 6 kho B0 | ~20 phút |
+        | 8 | Đồ thị RD | vài giây |
+        | 9 | Bảng kết quả để gửi lại | vài giây |
+        | 10 | Đẩy dữ liệu lên Drive, **tự ngắt runtime** | vài giây |
 
-        Có thể bấm **Runtime → Run all** rồi để máy chạy: Bước 11 tự ngắt runtime khi xong (đặt
-        `AUTO_DISCONNECT = False` ở Bước 11 nếu không muốn). Mỗi điểm được chấm và ghi lên Drive **ngay sau
-        khi nén xong**, nên runtime bị ngắt giữa chừng chỉ mất điểm đang làm dở: mở lại notebook, chạy lại
-        **từ Bước 1** — điểm đã chấm tự bỏ qua. Kết quả: `MyDrive/wild_diff_icmh/phase2/` và
-        `results/results.jsonl`.
+        Bấm **Runtime → Run all** rồi để máy chạy; Bước 10 tự ngắt runtime khi xong. Mỗi điểm được chấm và ghi
+        lên Drive **ngay sau khi nén xong**, nên runtime bị ngắt giữa chừng chỉ mất điểm đang làm dở: mở lại
+        notebook, chạy lại **từ Bước 1** — điểm đã chấm tự bỏ qua. Kết quả: `MyDrive/wild_diff_icmh/phase2/`
+        và `results/results.jsonl`.
         """
     ),
     *_reused(["Bước 1 ", "Bước 2 ", "Bước 3 "]),
@@ -436,7 +455,8 @@ EVAL_CELLS = [
 
         Chỉ chép **300 ảnh dev** (~250 MB) từ Drive — không cần 10.222 ảnh hay checkpoint. Kiểm tra các kết quả của
         notebook Prepare (nhãn ngày/đêm, tập dev, MegaDetector trên ảnh gốc, kho B0) và in số ảnh B0 đã decode.
-        Dựng môi trường MegaDetector riêng và hàm `score_archive` chấm một kho (dùng ở Bước 6, 7, 8).
+        Chọn `BASELINE_DEV` = đúng tập ảnh B0 đã decode ở cạnh 512 (100 ảnh) để baseline và B0 so cặp trên cùng
+        ảnh. Dựng môi trường MegaDetector riêng và hàm `score_archive` chấm một kho (dùng ở Bước 5, 6, 7).
         """
     ),
     code(
@@ -498,6 +518,12 @@ EVAL_CELLS = [
             done = len(set(requested) & logged)
             print(f'  {run_info.parent.parent.name}/{run_info.parent.name}: {done}/{len(requested)}'
                   + ('' if done == len(requested) else '  ← CHƯA ĐỦ'))
+
+        # Baselines are coded and scored on exactly the largest image set B0 decoded, so every
+        # comparison (image metrics and MegaDetector before/after) is paired image by image.
+        BASELINE_DEV = max((Path(json.loads(run_info.read_text()).get('dev_list') or DEV_LIST) for run_info in b0_runs),
+                           key=lambda path: len(dev_ids(path)))
+        print(f'Baseline chạy trên {BASELINE_DEV.name}: {len(dev_ids(BASELINE_DEV))} ảnh (cùng ảnh với B0)')
 
         __DETECT_ENV__
 
@@ -572,19 +598,9 @@ EVAL_CELLS = [
         print('Sẵn sàng.')
         """
     ),
-    markdown("## Bước 5 — Thống kê miền (CPU, vài giây)"),
-    code(
-        """
-        run_logged([
-            sys.executable, '-u', 'tools/data/domain_stats.py', '--manifest', MANIFEST,
-            '--illumination-sidecar', ILLUMINATION, '--detections', DETECTIONS,
-            '--output', P2 / 'domain_stats.json',
-        ], 'p2_domain_stats.log')
-        """
-    ),
     markdown(
         """
-        ## Bước 6 — Baseline JPEG / WebP (CPU, chạy song song 4 tiến trình)
+        ## Bước 5 — Baseline JPEG / WebP (CPU, chạy song song 4 tiến trình)
 
         JPEG ở độ phân giải gốc, ở cạnh dài 1024 và 512; WebP ở 1024 và 512. Cùng giao thức: ảnh gốc vào, ảnh gốc ra.
 
@@ -610,7 +626,7 @@ EVAL_CELLS = [
                 return curve, quality
             command = [
                 sys.executable, '-u', 'tools/baselines/run_classical.py', '--manifest', MANIFEST,
-                '--data-root', LOCAL_IMAGES, '--split', 'val', '--dev-list', DEV_LIST,
+                '--data-root', LOCAL_IMAGES, '--split', 'val', '--dev-list', BASELINE_DEV,
                 '--codec', codec, '--quality', quality, '--output', BASELINE_ROOT / curve / f'q{quality}',
                 '--skip-existing',
             ]
@@ -626,15 +642,14 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 7 — Baseline CompressAI (GPU, nhẹ)
+        ## Bước 6 — Baseline CompressAI (GPU, nhẹ)
 
         `bmshj2018-hyperprior` (họ codec của bài Xie 2025), `mbt2018`, `cheng2020-attn`, chất lượng 1–3,
         ở cạnh dài 1024 và 512.
 
         - `bmshj2018-hyperprior`: entropy coding thật, bitstream ghi ra file.
         - `mbt2018`, `cheng2020-attn` là model **tự hồi quy**: entropy coder của chúng chạy từng vị trí latent
-          một (~29 s/ảnh ở 1024 — lần chạy 05/10 mất ~2,4 giờ cho một điểm và runtime bị ngắt trước khi kịp
-          chấm). Ở đây chúng chạy một lượt forward và bpp = tổng −log2 likelihood (chế độ
+          một (~29 s/ảnh ở 1024 — lần chạy 05/10 mất ~2,4 giờ cho một điểm 300 ảnh). Ở đây chúng chạy một lượt forward và bpp = tổng −log2 likelihood (chế độ
           `--entropy-estimation` của CompressAI), ghi `rate: estimated` trong `run_info.json` và registry.
           Chênh lệch với bitstream thật chỉ là vài byte header mỗi ảnh.
 
@@ -650,7 +665,7 @@ EVAL_CELLS = [
                     continue
                 run_logged([
                     sys.executable, '-u', 'tools/baselines/run_compressai_zoo.py', '--manifest', MANIFEST,
-                    '--data-root', LOCAL_IMAGES, '--split', 'val', '--dev-list', DEV_LIST,
+                    '--data-root', LOCAL_IMAGES, '--split', 'val', '--dev-list', BASELINE_DEV,
                     '--model', model, '--quality', quality, '--processing-long-side', side,
                     '--output', BASELINE_ROOT / curve / f'q{quality}', '--skip-existing',
                 ], f'p2_{curve}_q{quality}.log', echo=False)
@@ -659,13 +674,12 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 8 — Chấm các kho B0 (và điểm baseline còn sót)
+        ## Bước 7 — Chấm các kho B0 (và điểm baseline còn sót)
 
-        Với mỗi kho B0 trên Drive (`phase2/archive/B0_*/<điểm>/`) và mỗi kho baseline còn trên ổ cục bộ:
-        chỉ số ảnh (PSNR, SSIM ×2, MS-SSIM, LPIPS, DISTS, bpp, compression ratio, thời gian) + MegaDetector trên
-        ảnh tái tạo → mAP, ảnh rỗng báo nhầm, ảo giác, mất con vật. Tất cả ghi vào `results/results.jsonl` với
-        `exp_id = p2dev_<đường>__<điểm>`. Chỉ chấm đúng các ảnh đã có trong kho (`decode_log.jsonl`); kho đã
-        chấm thì bỏ qua, trừ khi kho có thêm ảnh từ sau lần chấm trước (ví dụ B0 được decode thêm).
+        Mỗi kho B0 trên Drive (`phase2/archive/B0_*/<điểm>/`): chỉ số ảnh (PSNR, MS-SSIM, LPIPS, DISTS, bpp…) và
+        MegaDetector trên ảnh decode, so với MegaDetector trên ảnh gốc → mAP, AP_small, mất con vật, con vật
+        "ảo", ảnh rỗng báo nhầm. Bbox dự đoán trên ảnh decode lưu ở `phase2/detections/<đường>__<điểm>.jsonl`.
+        Kết quả vào `results/results.jsonl` với `exp_id = p2dev_<đường>__<điểm>`. Kho đã chấm thì bỏ qua.
         """
     ),
     code(
@@ -677,10 +691,10 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 9 — Đồ thị RD chung (tiêu chí 7 của Phase 2)
+        ## Bước 8 — Đồ thị RD
 
-        Mỗi đường là một phương pháp; trục x là bpp tính trên pixel ảnh gốc (log). Dùng để thấy dải bitrate
-        chồng lấn giữa B0 và các baseline trước khi chọn λ cho H1.
+        Mỗi đường là một phương pháp; trục x là bpp tính trên pixel ảnh gốc (log). Hàng trên: chất lượng ảnh;
+        hàng dưới: MegaDetector trên ảnh decode so với ảnh gốc (mAP, tỉ lệ mất con vật, tỉ lệ con vật "ảo").
         """
     ),
     code(
@@ -701,7 +715,7 @@ EVAL_CELLS = [
             curve = exp_id[len('p2dev_'):].split('__')[0]
             curves.setdefault(curve, []).append(values)
 
-        panels = ['psnr', 'ms_ssim', 'lpips', 'dists', 'map', 'hallucination_rate']
+        panels = ['psnr', 'ms_ssim', 'lpips', 'map', 'missed_animal_rate', 'hallucination_rate']
         figure, axes = plt.subplots(2, 3, figsize=(16, 9))
         for axis, metric in zip(axes.flat, panels):
             for curve, values in sorted(curves.items()):
@@ -721,27 +735,15 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 10 — Tóm tắt để gửi lại
+        ## Bước 9 — Bảng kết quả để gửi lại
 
-        In nhãn ngày/đêm theo nguồn, vài con số thống kê miền và bảng kết quả từng điểm (tất cả ảnh). Chụp lại
-        output cell này cùng `phase2/rd_dev.png`.
+        Mỗi dòng là một điểm (một phương pháp ở một mức nén). Chụp lại output cell này cùng `phase2/rd_dev.png`.
         """
     ),
     code(
         """
-        import collections
-
-        labels = [json.loads(line) for line in ILLUMINATION.read_text(encoding='utf-8').splitlines() if line.strip()]
-        print('Ngày/đêm:', dict(collections.Counter(r['illumination'] for r in labels)),
-              '| nguồn:', dict(collections.Counter(r['illumination_source'] for r in labels)),
-              '| giờ chụp → nhãn mới:', dict(collections.Counter(f"{r.get('illumination_hour_proxy')}->{r['illumination']}" for r in labels)))
-        stats_all = json.loads((P2 / 'domain_stats.json').read_text())['splits']['all']
-        print('Ảnh rỗng (nhãn người):', round(stats_all['empty_ratio_human_labels'], 3),
-              '| bbox con vật:', stats_all['animal_boxes'],
-              '| cỡ COCO gốc:', stats_all['coco_size_original'],
-              '| ở 1024:', stats_all.get('coco_size_at_long_side_1024'))
-
-        columns = ['bpp', 'psnr', 'ms_ssim', 'lpips', 'dists', 'map', 'ap_small', 'hallucination_rate', 'missed_animal_rate']
+        columns = ['bpp', 'psnr', 'ms_ssim', 'lpips', 'map', 'ap_small', 'missed_animal_rate',
+                   'hallucination_rate', 'empty_fp_rate']
         print(f"{'điểm':52s}" + ''.join(f'{c[:10]:>11s}' for c in columns))
         for exp_id, values in sorted(points.items()):
             print(f'{exp_id[len("p2dev_"):]:52s}' + ''.join(
@@ -750,33 +752,14 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 11 — Ghi phiên và tự ngắt runtime
+        ## Bước 10 — Đẩy dữ liệu lên Drive và tự ngắt runtime
 
-        Ghi giờ kết thúc (và CU nếu đã điền) vào `phase2/sessions.jsonl`, đẩy hết dữ liệu lên Drive, rồi
-        **ngắt runtime** để ngừng tiêu CU (`AUTO_DISCONNECT = False` để giữ runtime). Không cần điền CU trước khi
-        chạy: sau đó mở trang Colab (Runtime → View resources) và gửi số "Available".
+        Đặt `AUTO_DISCONNECT = False` nếu muốn giữ runtime sau khi chạy xong.
         """
     ),
     code(
         """
-        from datetime import datetime, timezone
-
-        CU_AVAILABLE_NOW = None  # số "Available" lúc này, nếu đang ngồi máy; để None cũng được
         AUTO_DISCONNECT = True
-
-        session = {
-            'date': datetime.now(timezone.utc).isoformat(),
-            'notebook': 'Wild_Diff_ICMH_Phase2_Eval',
-            'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-            'cu_start': None if CU_AVAILABLE_AT_START is None else float(CU_AVAILABLE_AT_START),
-            'cu_end': None if CU_AVAILABLE_NOW is None else float(CU_AVAILABLE_NOW),
-            'git_commit': subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=REPO, text=True).strip(),
-        }
-        if session['cu_start'] is not None and session['cu_end'] is not None:
-            session['cu_consumed'] = session['cu_start'] - session['cu_end']
-        with (P2 / 'sessions.jsonl').open('a', encoding='utf-8') as stream:
-            stream.write(json.dumps(session) + chr(10))
-        print(session)
 
         if AUTO_DISCONNECT:
             from google.colab import drive, runtime
@@ -785,7 +768,7 @@ EVAL_CELLS = [
             print('Đã đẩy dữ liệu lên Drive. Ngắt runtime.')
             runtime.unassign()
         else:
-            print('Nhớ ngắt runtime (Runtime → Disconnect and delete runtime) để ngừng tiêu CU.')
+            print('Xong. Nhớ ngắt runtime (Runtime → Disconnect and delete runtime).')
         """
     ),]
 
