@@ -32,6 +32,20 @@ commit: 4288862
     then `runtime.unassign()`, controlled by `AUTO_DISCONNECT`.
 - `.planning/REQUIREMENTS.md` EVAL-14 records the estimated-rate protocol decision.
 
+## Follow-up (same day, user direction)
+
+The user's goal for this notebook is limited to two things: baselines to compare against, and
+MegaDetector bboxes before and after decode. Compute units are no longer recorded.
+
+- Baselines run on `BASELINE_DEV`, the largest image set B0 decoded (100 dev images at 512),
+  so every comparison is paired. Before this change the baselines used 300 images while B0
+  used 100.
+- Both Phase 2 notebooks have their own step 1 (Drive only); the last cell flushes Drive and
+  disconnects.
+- Dropped the domain-stats step (already done in Prepare P2-4). The RD plot and the table focus
+  on mAP, missed animals and hallucinated animals.
+- Steps renumbered 1–10; estimated run time is ~1.5 h.
+
 ## Verification
 
 - `python -m pytest -q`: 161 passed, 3 skipped.
