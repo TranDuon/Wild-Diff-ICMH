@@ -37,19 +37,30 @@ def test_notebooks_clone_the_phase2_branch_and_never_ask_for_compute_units(path)
 def test_eval_is_one_linear_workflow_on_dev_images_only():
     headings = [cell["source"].splitlines()[0] for cell in _cells(EVAL) if cell["cell_type"] == "markdown"][1:]
     numbers = [int(heading.split("Bước ")[1].split()[0]) for heading in headings]
-    assert numbers == list(range(1, 11))
+    assert numbers == list(range(1, 12))
     code = _code(EVAL)
     assert "Bước 2A" not in "\n".join(headings)
-    for heavy in ("tools/data/label_illumination.py", "inference_partition.py", "precompute_ram_tags.py",
-                  "hf_hub_download", "RUN_B0"):
+    for heavy in ("tools/data/label_illumination.py", "precompute_ram_tags.py", "hf_hub_download", "RUN_B0"):
         assert heavy not in code
     assert "Ảnh dev cục bộ" in code
     assert "tools/data/domain_stats.py" not in code  # done once in Prepare (P2-4)
 
 
+def test_extra_b0_decode_matches_prepare_and_feeds_the_baselines():
+    prepare, evaluation = _code(PREPARE), _code(EVAL)
+    for setting in ("'params.control_stage_config.params.control_model_ratio=1.0'", "'params.c_cfg_scale=3.0'",
+                    "'--sampler', 'ddim'", "'--tag-cache', TAGS_ALL", "'--skip-existing'"):
+        assert setting in prepare and setting in evaluation
+    assert "B0_SIDE, DDIM_STEPS = 512, 50" in evaluation and "DDIM_STEPS = 50" in prepare
+    # every dev image with an animal joins the already-decoded subset, decoded into the same archive
+    assert "row.get('is_empty') is False" in evaluation
+    assert "'--output', B0_ARCHIVE / f'lambda_{lam}'" in evaluation
+    assert evaluation.index("inference_partition.py") < evaluation.index("tools/baselines/run_classical.py")
+
+
 def test_baselines_run_on_exactly_the_images_b0_decoded():
     code = _code(EVAL)
-    assert "BASELINE_DEV = max(" in code
+    assert "BASELINE_DEV = B0_EVAL_LIST" in code
     assert code.count("'--dev-list', BASELINE_DEV,") == 2
     assert "'--dev-list', DEV_LIST," not in code
 

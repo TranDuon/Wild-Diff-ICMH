@@ -426,8 +426,9 @@ EVAL_CELLS = [
         # Wild-Diff-ICMH — Phase 2 (2/2): baseline và MegaDetector trước/sau decode
 
         Mục tiêu: (1) các baseline nén để so với B0, (2) MegaDetector trên ảnh **trước** (ảnh gốc) và **sau** khi
-        decode để so bbox vùng động vật — mAP, mất con vật, con vật "ảo". Mọi phương pháp được chấm trên **đúng
-        cùng các ảnh B0 đã decode** (100 ảnh dev, cạnh 512), nên so sánh là so cặp từng ảnh.
+        decode để so bbox vùng động vật — mAP, mất con vật, con vật "ảo". Tập so sánh: 100 ảnh dev ngẫu nhiên
+        B0 đã decode **cộng mọi ảnh dev có con vật** (~200 ảnh, 136 ảnh có con vật). Mọi phương pháp được chấm
+        trên đúng các ảnh này, nên so sánh là so cặp từng ảnh.
 
         Notebook `Wild_Diff_ICMH_Phase2_Prepare.ipynb` (tập dev, MegaDetector trên ảnh gốc, decode B0) đã chạy xong.
 
@@ -435,14 +436,15 @@ EVAL_CELLS = [
         |---|---|---|
         | 1–3 | Drive, code nhánh `phase2`, cài đặt | ~10 phút |
         | 4 | Chép ảnh dev, kiểm tra kho B0, dựng MegaDetector | ~5 phút |
-        | 5 | JPEG/WebP: nén rồi chấm từng điểm (15 điểm) | ~20 phút |
-        | 6 | CompressAI: nén rồi chấm từng điểm (18 điểm) | ~30 phút |
-        | 7 | Chấm 6 kho B0 | ~20 phút |
-        | 8 | Đồ thị RD | vài giây |
-        | 9 | Bảng kết quả để gửi lại | vài giây |
-        | 10 | Đẩy dữ liệu lên Drive, **tự ngắt runtime** | vài giây |
+        | 5 | Decode B0 thêm cho mọi ảnh dev có con vật (~100 ảnh × 3 λ, cạnh 512) | ~80 phút |
+        | 6 | JPEG/WebP: nén rồi chấm từng điểm (15 điểm) | ~40 phút |
+        | 7 | CompressAI: nén rồi chấm từng điểm (18 điểm) | ~60 phút |
+        | 8 | Chấm 4 kho B0 | ~20 phút |
+        | 9 | Đồ thị RD | vài giây |
+        | 10 | Bảng kết quả để gửi lại | vài giây |
+        | 11 | Đẩy dữ liệu lên Drive, **tự ngắt runtime** | vài giây |
 
-        Bấm **Runtime → Run all** rồi để máy chạy; Bước 10 tự ngắt runtime khi xong. Mỗi điểm được chấm và ghi
+        Bấm **Runtime → Run all** rồi để máy chạy (~3–3,5 giờ); Bước 11 tự ngắt runtime khi xong. Mỗi điểm được chấm và ghi
         lên Drive **ngay sau khi nén xong**, nên runtime bị ngắt giữa chừng chỉ mất điểm đang làm dở: mở lại
         notebook, chạy lại **từ Bước 1** — điểm đã chấm tự bỏ qua. Kết quả: `MyDrive/wild_diff_icmh/phase2/`
         và `results/results.jsonl`.
@@ -455,8 +457,7 @@ EVAL_CELLS = [
 
         Chỉ chép **300 ảnh dev** (~250 MB) từ Drive — không cần 10.222 ảnh hay checkpoint. Kiểm tra các kết quả của
         notebook Prepare (nhãn ngày/đêm, tập dev, MegaDetector trên ảnh gốc, kho B0) và in số ảnh B0 đã decode.
-        Chọn `BASELINE_DEV` = đúng tập ảnh B0 đã decode ở cạnh 512 (100 ảnh) để baseline và B0 so cặp trên cùng
-        ảnh. Dựng môi trường MegaDetector riêng và hàm `score_archive` chấm một kho (dùng ở Bước 5, 6, 7).
+        Dựng môi trường MegaDetector riêng và hàm `score_archive` chấm một kho (dùng ở Bước 6, 7, 8).
         """
     ),
     code(
@@ -518,12 +519,6 @@ EVAL_CELLS = [
             done = len(set(requested) & logged)
             print(f'  {run_info.parent.parent.name}/{run_info.parent.name}: {done}/{len(requested)}'
                   + ('' if done == len(requested) else '  ← CHƯA ĐỦ'))
-
-        # Baselines are coded and scored on exactly the largest image set B0 decoded, so every
-        # comparison (image metrics and MegaDetector before/after) is paired image by image.
-        BASELINE_DEV = max((Path(json.loads(run_info.read_text()).get('dev_list') or DEV_LIST) for run_info in b0_runs),
-                           key=lambda path: len(dev_ids(path)))
-        print(f'Baseline chạy trên {BASELINE_DEV.name}: {len(dev_ids(BASELINE_DEV))} ảnh (cùng ảnh với B0)')
 
         __DETECT_ENV__
 
@@ -600,7 +595,100 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 5 — Baseline JPEG / WebP (CPU, chạy song song 4 tiến trình)
+        ## Bước 5 — Decode B0 thêm cho mọi ảnh dev có con vật (GPU)
+
+        Tập ngẫu nhiên 100 ảnh chỉ có 34 ảnh có con vật — quá ít để so bbox. Bước này lập danh sách
+        `phase2/kgalagadi_dev_b0eval.txt` = 100 ảnh đã decode **∪ mọi ảnh dev có con vật** (nhãn người, 136 ảnh), rồi
+        decode B0 cạnh 512 cho phần ảnh còn thiếu, **cùng thiết lập với notebook Prepare** (DDIM 50, cùng seed từng
+        ảnh, cùng checkpoint), vào đúng kho cũ `phase2/archive/B0_ls512_ddim50/lambda_<λ>/`. Ảnh đã decode được bỏ
+        qua, nên chạy lại cell này không tốn thêm.
+
+        `EXTRA_LAMBDAS = [8]` nhanh hơn 3 lần (~25 phút), nhưng khi đó λ = 2 và 32 vẫn chỉ có 100 ảnh và không so
+        cặp được với baseline. Checkpoint chép từ Drive (đã có từ notebook Prepare), không tải lại.
+        """
+    ),
+    code(
+        """
+        EXTRA_LAMBDAS = [2, 8, 32]
+        B0_SIDE, DDIM_STEPS = 512, 50
+        B0_OVERRIDES = [  # identical to the Prepare notebook's B0 decode
+            'params.control_stage_config.params.control_model_ratio=1.0',
+            'params.c_cfg_scale=3.0',
+        ]
+        B0_ARCHIVE = ARCHIVE / f'B0_ls{B0_SIDE}_ddim{DDIM_STEPS}'
+        B0_EVAL_LIST = P2 / 'kgalagadi_dev_b0eval.txt'
+        TAGS_ALL = DRIVE_ROOT / 'tags' / 'KGA_all.jsonl'
+        DRIVE_CKPT_ROOT = DRIVE_ROOT / 'checkpoints'
+        CKPT_ROOT = Path('/content/data/wild_diff_icmh/checkpoints')
+        SD_RELATIVE = Path('sd2p1/v2-1_512-ema-pruned.ckpt')
+        assert TAGS_ALL.is_file(), f'Thiếu {TAGS_ALL} (notebook Prepare, P2-5)'
+
+
+        def b0_relative(lam):
+            return Path('difficmh_models') / f'CNscale1.0_1_1_{lam}_2_WTagGCM_bs16x1_lr0.00005_cfg7.0' / 'model.ckpt'
+
+
+        def logged_ids(folder):
+            log = folder / 'decode_log.jsonl'
+            if not log.is_file():
+                return set()
+            return {json.loads(line)['image_id'] for line in log.read_text().splitlines() if line.strip()}
+
+
+        # Already-decoded random subset(s) + every dev image a human labelled as containing an animal.
+        decoded_before = set()
+        for run_info in sorted(B0_ARCHIVE.glob('lambda_*/run_info.json')):
+            decoded_before |= set(dev_ids(json.loads(run_info.read_text()).get('dev_list') or DEV_LIST))
+        animals = {row['image_id'] for row in rows if row['image_id'] in wanted and row.get('is_empty') is False}
+        chosen = sorted(decoded_before | animals)
+        listing = ('# B0 evaluation set: earlier random B0 subset + every dev image with an animal (human labels)'
+                   + chr(10) + chr(10).join(chosen) + chr(10))
+        if not B0_EVAL_LIST.is_file() or B0_EVAL_LIST.read_text() != listing:
+            B0_EVAL_LIST.write_text(listing)
+        print(f'Tập so sánh: {len(chosen)} ảnh ({len(animals)} ảnh có con vật, {len(decoded_before)} ảnh đã decode trước)')
+
+        pending = {lam: len(set(chosen) - logged_ids(B0_ARCHIVE / f'lambda_{lam}')) for lam in EXTRA_LAMBDAS}
+        print('Ảnh còn phải decode theo λ:', pending)
+        if any(pending.values()):
+            def restore(relative):
+                source, target = DRIVE_CKPT_ROOT / relative, CKPT_ROOT / relative
+                assert source.is_file(), f'Thiếu checkpoint trên Drive: {source}'
+                if not target.is_file() or target.stat().st_size != source.stat().st_size:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, target)
+                return target
+
+            sd_checkpoint = restore(SD_RELATIVE)
+            repo_checkpoints = REPO / 'checkpoints'  # configs/model/diffeic.yaml reads ./checkpoints/sd2p1/...
+            if not repo_checkpoints.exists():
+                repo_checkpoints.symlink_to(CKPT_ROOT, target_is_directory=True)
+            for lam in EXTRA_LAMBDAS:
+                if not pending[lam]:
+                    continue
+                run_logged([
+                    sys.executable, '-u', 'inference_partition.py',
+                    '--ckpt_sd', sd_checkpoint, '--ckpt_lc', restore(b0_relative(lam)),
+                    '--config', 'configs/model/diffeic.yaml',
+                    '--input', LOCAL_IMAGES, '--output', B0_ARCHIVE / f'lambda_{lam}',
+                    '--manifest', MANIFEST, '--split', 'val', '--dev-list', B0_EVAL_LIST,
+                    '--tag-cache', TAGS_ALL, '--sampler', 'ddim', '--steps', DDIM_STEPS,
+                    '--device', 'cuda', '--processing-long-side', B0_SIDE, '--skip-existing',
+                    *B0_OVERRIDES,
+                ], f'p2_b0_eval_ls{B0_SIDE}_lambda{lam}.log', echo=False)
+                print('Xong B0 λ =', lam, f'({len(logged_ids(B0_ARCHIVE / f"lambda_{lam}"))} ảnh trong kho)')
+
+        # Baselines are coded and scored on exactly this image set, so every comparison
+        # (image metrics and MegaDetector before/after) is paired image by image.
+        BASELINE_DEV = B0_EVAL_LIST
+        for lam_dir in sorted(B0_ARCHIVE.glob('lambda_*')):
+            if not set(chosen) <= logged_ids(lam_dir):
+                print(f'Chú ý: {lam_dir.name} chưa có đủ {len(chosen)} ảnh — điểm này không so cặp với baseline.')
+        print(f'Baseline chạy trên {BASELINE_DEV.name}: {len(chosen)} ảnh')
+        """
+    ),
+    markdown(
+        """
+        ## Bước 6 — Baseline JPEG / WebP (CPU, chạy song song 4 tiến trình)
 
         JPEG ở độ phân giải gốc, ở cạnh dài 1024 và 512; WebP ở 1024 và 512. Cùng giao thức: ảnh gốc vào, ảnh gốc ra.
 
@@ -642,7 +730,7 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 6 — Baseline CompressAI (GPU, nhẹ)
+        ## Bước 7 — Baseline CompressAI (GPU, nhẹ)
 
         `bmshj2018-hyperprior` (họ codec của bài Xie 2025), `mbt2018`, `cheng2020-attn`, chất lượng 1–3,
         ở cạnh dài 1024 và 512.
@@ -674,7 +762,7 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 7 — Chấm các kho B0 (và điểm baseline còn sót)
+        ## Bước 8 — Chấm các kho B0 (và điểm baseline còn sót)
 
         Mỗi kho B0 trên Drive (`phase2/archive/B0_*/<điểm>/`): chỉ số ảnh (PSNR, MS-SSIM, LPIPS, DISTS, bpp…) và
         MegaDetector trên ảnh decode, so với MegaDetector trên ảnh gốc → mAP, AP_small, mất con vật, con vật
@@ -691,7 +779,7 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 8 — Đồ thị RD
+        ## Bước 9 — Đồ thị RD
 
         Mỗi đường là một phương pháp; trục x là bpp tính trên pixel ảnh gốc (log). Hàng trên: chất lượng ảnh;
         hàng dưới: MegaDetector trên ảnh decode so với ảnh gốc (mAP, tỉ lệ mất con vật, tỉ lệ con vật "ảo").
@@ -735,7 +823,7 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 9 — Bảng kết quả để gửi lại
+        ## Bước 10 — Bảng kết quả để gửi lại
 
         Mỗi dòng là một điểm (một phương pháp ở một mức nén). Chụp lại output cell này cùng `phase2/rd_dev.png`.
         """
@@ -752,7 +840,7 @@ EVAL_CELLS = [
     ),
     markdown(
         """
-        ## Bước 10 — Đẩy dữ liệu lên Drive và tự ngắt runtime
+        ## Bước 11 — Đẩy dữ liệu lên Drive và tự ngắt runtime
 
         Đặt `AUTO_DISCONNECT = False` nếu muốn giữ runtime sau khi chạy xong.
         """

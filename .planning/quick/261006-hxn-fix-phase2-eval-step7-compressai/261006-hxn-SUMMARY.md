@@ -46,6 +46,11 @@ MegaDetector bboxes before and after decode. Compute units are no longer recorde
   on mAP, missed animals and hallucinated animals.
 - Steps renumbered 1–10; estimated run time is ~1.5 h.
 
+- Added Eval step 5. It decodes B0 at 512 (all three λ, with the same settings as Prepare) on
+  every dev image that has an animal. The comparison set `kgalagadi_dev_b0eval.txt` is the
+  earlier 100-image subset plus the 136 animal images, 202 images in total (102 new per λ).
+  Baselines are scored on this set. Prepare notebook is unchanged.
+
 ## Verification
 
 - `python -m pytest -q`: 161 passed, 3 skipped.
