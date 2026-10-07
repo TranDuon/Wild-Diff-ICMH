@@ -10,6 +10,11 @@
 - **Tiến độ:** hôm nay là tuần 5/~10 (hạn chót ~16/11/2026); dự án chậm khoảng 1–2 tuần so với lịch theo tuần ngày 16/09 (H1 lẽ ra bắt đầu 07/10).
 - **Bài so sánh ngoài chưa chốt** (bài Xie 2025 là workshop, ít thông tin). Vì vậy từ 04/10 dự án theo nguyên tắc **"đánh giá độc lập với bài so sánh"**: train và giải mã một lần, lưu lại tất cả, chọn bài so sánh sau mà không train lại (ANLS-09).
 
+## Cập nhật 07/10/2026
+
+- **Bài so sánh ngoài đã chốt: Xie et al. 2025** (*Saliency-guided deployment-adaptive compression for wildlife camera traps*, CCAI@NeurIPS 2025, cùng Snapshot Kgalagadi). Bài không công bố code hay split nên dự án **tự tái hiện** thành baseline **Xie-SGC** ở Phase 2 (EVAL-17, Plan 02-07): fine-tune encoder Ballé hyperprior riêng từng site với MSE trọng số theo bbox MegaDetector (1 : 0,001), chấm trên `BASELINE_DEV` so cặp với B0. Đây là lượt train duy nhất được thêm vì bài so sánh (≤2 CU, Ballé nhỏ); nguyên tắc "không train lại" vẫn áp cho mọi model Diff-ICMH. Đối chứng Xie-FT (không SGC) làm nếu còn CU.
+- **Hệ quả cho H2 (Phase 4):** SGC của Xie về bản chất là ROI-weighted loss theo bbox MegaDetector, cùng ý tưởng với H2. Câu hỏi phản biện "H2 khác gì Xie?" phải trả lời được bằng số liệu, xem ghi chú ở Phase 4.
+
 ### Quyết định đã chốt ngày 04/10/2026 (theo hướng tổng quát)
 
 | # | Quyết định | Lý do | Requirement |
@@ -18,7 +23,7 @@
 | G-2 | **Đo end-to-end ở độ phân giải gốc**; độ phân giải xử lý bên trong là tham số (mặc định cạnh dài 1024) chọn trên tập dev; train crop từ ảnh ở cùng tỉ lệ đó | Từ ảnh gốc tính lại được mọi kiểu đánh giá; tránh hết VRAM (~26 GiB ở ảnh gốc); tránh lệch tỉ lệ con vật giữa train và test | EVAL-11, INFRA-01 |
 | G-3 | **Phủ rộng dải bitrate**: λ = 2, 8, 32 + núm chỉnh phía giải mã không tốn bit | Bài so sánh nào ở dải bitrate nào cũng có điểm chồng lên | ANLS-01, H1-06 |
 | G-4 | **Split và tập test giữ nguyên**; mọi lựa chọn siêu tham số làm trên tập dev lấy từ validation; test chạy một lần | Đổi split hay chọn trên test sẽ làm hỏng mọi kết quả | DATA-02, EVAL-16 |
-| G-5 | **Giải mã một lần, lưu hết** (bitstream, ảnh tái tạo gốc, thời gian); **đa chỉ số**; **baseline phổ quát** (JPEG, WebP, CompressAI zoo, B0, VTM/BPG); **ghi đủ thông tin giao thức** mỗi dòng kết quả | Khi chốt bài so sánh chỉ cần tính lại chỉ số trên CPU và vẽ đồ thị | EVAL-12..15 |
+| G-5 | **Giải mã một lần, lưu hết** (bitstream, ảnh tái tạo gốc, thời gian); **đa chỉ số**; **baseline phổ quát** (JPEG, WebP, CompressAI zoo, B0, Xie-SGC tái hiện — thêm 07/10, VTM/BPG); **ghi đủ thông tin giao thức** mỗi dòng kết quả | Khi chốt bài so sánh chỉ cần tính lại chỉ số trên CPU và vẽ đồ thị | EVAL-12..15 |
 
 ## Overview
 
@@ -94,8 +99,8 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
 **Goal**: Mở rộng lát cắt Phase 1 từ site KGA:A01 sang toàn bộ 10.222 ảnh Kgalagadi, hoàn thiện dataset (ảnh/mask crop khớp, log tỉ lệ crop chứa động vật), và harness eval đầy đủ (detection, species, chất lượng ảnh) chấm điểm được checkpoint gốc chưa fine-tune làm baseline chịu lực cho toàn bộ bảng ablation.
 **Mode:** mvp
 **Depends on**: Phase 1
-**Requirements**: DATA-01, DATA-04, DATA-06, DATA-07, INFRA-01, INFRA-02, EVAL-02, EVAL-03, EVAL-04, EVAL-05, EVAL-06, EVAL-07, EVAL-09, EVAL-10, EVAL-11, EVAL-12, EVAL-13, EVAL-14, EVAL-15, EVAL-16
-**Compute budget**: ≤10 CU gốc, đề xuất tạm ≤8 CU (~4,5h L4) — chủ yếu inference-only (MegaDetector trên toàn corpus, decode B0 trên tập dev); không có training. JPEG/WebP/VTM chạy CPU; CompressAI zoo rất nhẹ. Tải/chuẩn hoá/đóng gói corpus không tốn compute unit (CPU + I/O), chỉ tốn thời gian và Drive storage.
+**Requirements**: DATA-01, DATA-04, DATA-06, DATA-07, INFRA-01, INFRA-02, EVAL-02, EVAL-03, EVAL-04, EVAL-05, EVAL-06, EVAL-07, EVAL-09, EVAL-10, EVAL-11, EVAL-12, EVAL-13, EVAL-14, EVAL-15, EVAL-16, EVAL-17
+**Compute budget**: ≤10 CU gốc, đề xuất tạm ≤8 CU (~4,5h L4) — chủ yếu inference-only (MegaDetector trên toàn corpus, decode B0 trên tập dev). Training duy nhất là Xie-SGC (EVAL-17): fine-tune encoder Ballé nhỏ cho 20 site × 3 mức q, trần ≤2 CU nằm **trong** trần ≤8 CU này, chạy pilot một site để đo thời gian trước. JPEG/WebP/VTM chạy CPU; CompressAI zoo rất nhẹ. Tải/chuẩn hoá/đóng gói corpus không tốn compute unit (CPU + I/O), chỉ tốn thời gian và Drive storage.
 **Success Criteria** (what must be TRUE):
   1. Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có người đã tải, chuẩn hoá, chia 70/15/15 theo sequence trong từng site và copy về đĩa local của session lúc khởi động — không đọc trực tiếp từng file nhỏ trên Drive; Serengeti chỉ dùng đánh giá bổ sung.
   2. Thống kê miền đo được trên corpus thật (tỉ lệ ảnh rỗng, tỉ lệ ngày RGB/đêm IR, phân bố diện tích bbox) và ROI mask sinh từ bbox **MegaDetector** (detector/ngưỡng cố định, pseudo-label — DATA-06) kèm histogram độ phủ mask cho tập train được xuất ra và hợp lý. File detections JSON phủ **mọi** ảnh (kể cả `detections: []`) vì preflight H2 chặn nếu thiếu.
@@ -104,9 +109,10 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   5. Giao thức end-to-end ở độ phân giải gốc (EVAL-11) chạy được: decode/evaluate nhận ảnh gốc, xử lý ở độ phân giải trong (mặc định cạnh dài 1024), trả ảnh cùng kích thước gốc; chế độ crop 256 ở giữa ảnh không còn là mặc định cho số báo cáo. Thời gian giải mã mỗi ảnh ở 1024 (và 512 để so) đã đo để định cỡ tập dev.
   6. Tập dev cố định từ validation (EVAL-16) đã đóng băng thành file danh sách; B0 ở λ = 2/8/32 và các baseline phổ quát (EVAL-14) đã giải mã trên tập dev, kho lưu trữ EVAL-12 có đủ bitstream + ảnh tái tạo gốc + thời gian, và `results.jsonl` có đủ bộ chỉ số EVAL-13 kèm thông tin giao thức EVAL-15.
   7. Vùng bitrate của B0 và các baseline được đặt chung một đồ thị để biết dải chồng lấn trước khi chọn λ cho H1.
+  8. Baseline tái hiện Xie-SGC (EVAL-17) có ít nhất q = 1/2/3 trên `BASELINE_DEV` ở cạnh dài 512, mỗi ảnh nén bằng model của site nó, decoder đúng là decoder pretrained (kiểm bằng so trọng số), chấm đủ chỉ số EVAL-13 + MegaDetector trước/sau, và có đồ thị SSIM–compression ratio đặt cạnh JPEG, Ballé pretrained và B0.
 
-**Việc code cần làm trong phase này:** chế độ resize cạnh dài dùng chung cho dataset / `inference_partition.py` / `tools/evaluate_kgalagadi.py` (`utils/image_geometry.py`); script baseline JPEG/WebP và CompressAI zoo; mở rộng evaluator (MS-SSIM, DISTS, byte/ảnh, compression ratio trên ảnh gốc, thời gian) và schema registry; config H1 cho **mọi site** (hiện `KGA_SITE_ID` mặc định `KGA:A01`) + tag cache RAM++ cho cả 20 site.
-**Plans**: 6 plans — xem `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md` — code xong 05/10 cho cả 6 plan (02-01 giao thức độ phân giải gốc; 02-02 evaluator đa chỉ số + bootstrap + registry; 02-03 tập dev; 02-04 baseline JPEG/WebP/CompressAI; 02-05 MegaDetector + chỉ số máy + thống kê miền; 02-06 config H1 chung + log crop + notebook Phase 2) và nhãn ngày/đêm theo nguồn sáng. **Còn:** chạy notebook Phase 2 trên Colab, đóng băng tập dev theo nhãn mới, SpeciesNet (EVAL-04), VTM/BPG để Phase 6
+**Việc code cần làm trong phase này:** chế độ resize cạnh dài dùng chung cho dataset / `inference_partition.py` / `tools/evaluate_kgalagadi.py` (`utils/image_geometry.py`); script baseline JPEG/WebP và CompressAI zoo; script tái hiện Xie-SGC (`tools/baselines/train_xie_sgc.py`, thêm 07/10); mở rộng evaluator (MS-SSIM, DISTS, byte/ảnh, compression ratio trên ảnh gốc, thời gian) và schema registry; config H1 cho **mọi site** (hiện `KGA_SITE_ID` mặc định `KGA:A01`) + tag cache RAM++ cho cả 20 site.
+**Plans**: 7 plans — xem `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md` — 02-07 (baseline tái hiện Xie-SGC, EVAL-17) thêm 07/10, **chưa code**; code xong 05/10 cho 6 plan đầu (02-01 giao thức độ phân giải gốc; 02-02 evaluator đa chỉ số + bootstrap + registry; 02-03 tập dev; 02-04 baseline JPEG/WebP/CompressAI; 02-05 MegaDetector + chỉ số máy + thống kê miền; 02-06 config H1 chung + log crop + notebook Phase 2) và nhãn ngày/đêm theo nguồn sáng. **Còn:** chạy notebook Phase 2 trên Colab, đóng băng tập dev theo nhãn mới, SpeciesNet (EVAL-04), code + chạy Xie-SGC (02-07), VTM/BPG để Phase 6
 **UI hint**: no
 
 ### Phase 3: H1 — Fine-tuning thích ứng miền
@@ -140,6 +146,7 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   3. `L_dist_roi` và `L_dist_bg` log tách biệt ngay từ run đầu tiên và hai đường tách nhau rõ rệt — bằng chứng mask thực sự vào loss chứ không phải no-op.
   4. Quét α có ít nhất một biến thể V1 (chỉ weight `L_dist`) và một biến thể V2 (weight cả `L_dist` và `L_sem`); tỉ lệ false positive trên ảnh rỗng được theo dõi riêng ở **từng giá trị α** để phát hiện sớm nghịch lý bỏ đói nền.
   5. H2 được so với **H1-control** (từ cùng checkpoint H1, cùng số optimizer step, seed, LR, loss đều), không chỉ so với H1 trước khi train thêm — để tách đóng góp của trọng số ROI khỏi việc train thêm.
+  6. (thêm 07/10) Khác biệt giữa H2 và Xie-SGC (EVAL-17) được phát biểu và đo được, không chỉ nêu bằng lời. Hai cơ chế cùng là ROI-weighted loss theo bbox MegaDetector; khác ở chỗ H2 áp lên codec sinh ảnh (decoder là SD 2.1 đóng băng, trọng số vào cả `L_dist` ở latent VAE và `L_sem` ở Encoder Layer 9), dùng một model chung thay vì model từng site, và được chấm bằng chỉ số máy (mAP, con vật bị mất/"ảo") chứ không chỉ SSIM. Cặp Xie-FT → Xie-SGC là bản sao H1-control → H2 trên codec cổ điển: so mức lợi của ROI-weighting ở hai loại codec trên cùng `BASELINE_DEV`.
 **Plans**: TBD
 **UI hint**: no
 
@@ -177,7 +184,7 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   3. Trần vật lý của VAE chứng minh bằng lập luận Nyquist cộng thí nghiệm FFT trên ảnh gốc vs ảnh decode; anchor VTM/BPG chạy nền trên CPU không cạnh tranh compute unit với training; failure taxonomy có ví dụ ảnh kèm theo, không chỉ chọn ảnh đẹp; mọi figure sinh tự động từ `results.jsonl` qua `make_all_figures.py`.
   4. Báo cáo kỹ thuật hoàn chỉnh với Method, Setup, Experiments, Analysis và mục Limitations thực chất (trần VAE, rủi ro ảo giác, bản chất pseudo-GT của mask, sai lệch cố ý so với setup gốc); định vị tính mới cite đúng TLIC (DCC 2024) và arXiv:2604.01122 (Disney/ETH).
   5. Gói tái lập (env đã pin, `results.jsonl` cùng script sinh figure, manifest split, checkpoint chỉ chứa delta đã fine-tune, smoke test tối thiểu) và slide + notebook demo chạy được trên ít nhất 2 ảnh mẫu tồn tại.
-  6. Bài so sánh ngoài đã chốt (ANLS-09) và được đặt trên cùng đồ thị với B0–B4 và baseline phổ quát, theo đúng chỉ số bài đó báo cáo, tính từ kho EVAL-12 — không có lượt train nào được thêm vì bài so sánh.
+  6. Bài so sánh ngoài (ANLS-09, đã chốt 07/10: Xie et al. 2025) được đặt trên cùng đồ thị với B0–B4 và baseline phổ quát qua baseline tái hiện Xie-SGC (EVAL-17), theo cả chỉ số bài đó báo cáo (SSIM theo compression ratio) lẫn chỉ số máy, tính từ kho EVAL-12. Số công bố của bài chỉ là điểm tham khảo ghi rõ "không cùng tập". Ngoài lượt fine-tune Ballé của Xie-SGC ở Phase 2, không có lượt train nào được thêm vì bài so sánh.
 **Plans**: TBD
 **UI hint**: no
 
@@ -188,7 +195,7 @@ Tổng ngân sách Colab Pro cho cả dự án: **~100 compute units (~50h tươ
 | Phase | Loại chi | Trần gốc (trước đo) | Trần đề xuất tạm (04/10, còn 74,37 CU) | Ghi chú |
 |-------|----------|----------------|----------------|---------|
 | 1 | Smoke-test + kill/resume | ≤8 CU (~4.5h L4) | ≤2 CU cho phần còn lại | **Xong.** Phiên closeout đo thật 1,37 CU |
-| 2 | Inference-only (MegaDetector, baseline eval) | ≤10 CU (~6h L4) | ≤8 CU | Tải/chuẩn hoá corpus không tốn compute unit |
+| 2 | Inference-only (MegaDetector, baseline eval) + fine-tune Ballé cho Xie-SGC | ≤10 CU (~6h L4) | ≤8 CU (Xie-SGC ≤2 CU trong đó) | Tải/chuẩn hoá corpus không tốn compute unit |
 | 3 | Training (H1) | ≤35 CU (~20h L4) | ≤28 CU | Khoản chi lớn nhất, đa session, resume đầy đủ |
 | 4 | Training (H2 alpha sweep + H1-control) | ≤25 CU (~14.5h L4) | ≤20 CU | Tiếp nối từ checkpoint H1, không train lại từ đầu |
 | 5 | Decode-only (H3 L1/L2) | ≤5 CU (~3h L4) | ≤4 CU | Zero training — đòn bẩy ngân sách lớn nhất dự án |
@@ -215,7 +222,7 @@ Giao diện giữa hai luồng là **hợp đồng thư mục** (file/schema c�
 | Phase | TV-A (Data & Evaluation Lead) | TV-B (Model & Training Lead) |
 |-------|-------------------------------|-------------------------------|
 | 1 | Split an toàn (DATA-02/03/05), schema `results.jsonl` (EVAL-01) | Vá dependency + resume + checkpoint (PRE-01..06), smoke-test (INFRA-03/04/05), eval ảnh decode (EVAL-08) |
-| 2 | Tải corpus, MegaDetector bbox → ROI mask, thống kê miền, eval harness (MegaDetector + SpeciesNet), tập dev, baseline phổ quát JPEG/WebP/CompressAI zoo/VTM, mở rộng evaluator + registry | Chế độ end-to-end ở độ phân giải gốc (EVAL-11), decode B0, log tỉ lệ crop chứa động vật + overlay mask (INFRA-02), config H1 model chung + tag cache 20 site |
+| 2 | Tải corpus, MegaDetector bbox → ROI mask, thống kê miền, eval harness (MegaDetector + SpeciesNet), tập dev, baseline phổ quát JPEG/WebP/CompressAI zoo/VTM, mở rộng evaluator + registry | Chế độ end-to-end ở độ phân giải gốc (EVAL-11), decode B0, log tỉ lệ crop chứa động vật + overlay mask (INFRA-02), config H1 model chung + tag cache 20 site, fine-tune Ballé từng site cho Xie-SGC (EVAL-17) |
 | liên tục | Tìm và kiểm tra bài so sánh ngoài (dữ liệu, chỉ số, code công khai) để chốt trước Phase 6 (ANLS-09) | — |
 | 3 | Vận hành eval harness theo dõi checkpoint H1 qua `STATUS.json`/poll nhẹ | Chạy fine-tuning H1, theo dõi loss/forgetting |
 | 4 | Đo false-positive theo từng α, dựng overlay mask kiểm tra bằng mắt | Chạy quét α (H2), theo dõi `L_dist_roi`/`L_dist_bg` |
