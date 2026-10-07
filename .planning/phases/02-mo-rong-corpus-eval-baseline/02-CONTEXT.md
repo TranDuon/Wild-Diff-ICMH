@@ -30,7 +30,7 @@ Giải thích cho cả hai thành viên các khái niệm Phase 2 dùng. Giao th
   các model nén học sâu có sẵn của CompressAI (`bmshj2018-hyperprior` — gần giống codec bài Xie,
   `mbt2018`, `cheng2020-attn`), VTM/BPG nếu kịp. Có các đường này thì khi thầy chỉ định bài so sánh
   nào, gần như chắc đã có điểm tham chiếu chung.
-- **Xie-SGC (EVAL-17, thêm 07/10)** = bản **tự tái hiện** bài Xie et al. 2025 (CCAI@NeurIPS, cùng
+- **Xie-SGC (EVAL-17, thêm 07/10; chạy ở đầu Phase 3, spec `../03-h1-fine-tuning-th-ch-ng-mi-n/XIE-SGC-SPEC.md`)** = bản **tự tái hiện** bài Xie et al. 2025 (CCAI@NeurIPS, cùng
   Snapshot Kgalagadi), vì bài không công bố code hay split. Cách làm của bài: lấy Ballé hyperprior
   pretrained, fine-tune **chỉ encoder** riêng cho từng site (decoder đóng băng, nên bên nhận dùng
   nguyên decoder gốc), và dùng **SGC** (saliency-guided compression) = loss MSE có trọng số 1 trong

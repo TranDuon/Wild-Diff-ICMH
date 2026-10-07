@@ -1,6 +1,6 @@
 ---
 phase: 2
-plans: 7
+plans: 6
 status: executing
 created: 2026-10-05
 updated: 2026-10-07
@@ -9,7 +9,7 @@ branch: phase2
 
 # Phase 2 — Plan: mở rộng toàn corpus + hạ tầng đánh giá + baseline
 
-Requirements: DATA-01, 04, 06, 07; INFRA-01, 02; EVAL-02..07, 09..17. Ngân sách ≤8 CU (Xie-SGC ≤2 CU trong đó).
+Requirements: DATA-01, 04, 06, 07; INFRA-01, 02; EVAL-02..07, 09..16. Ngân sách ≤8 CU.
 Khái niệm: xem `02-CONTEXT.md`.
 
 ## Plans
@@ -64,30 +64,8 @@ Chia ra **code ở máy local (0 CU)** trước, rồi **một notebook Colab Ph
   chép corpus → MD toàn corpus → tag 20 site → đo thời gian giải mã 1024 vs 512 trên 5 ảnh →
   decode B0 trên dev ở các λ có sẵn → CompressAI zoo → evaluate → đồ thị RD chung.
 
-### Plan 02-07 — Baseline tái hiện Xie-SGC (EVAL-17, thêm 07/10, chưa code)
-Bài: Xie et al. 2025, `tmp/pdfs/xie2025_saliency_camera_traps.pdf`. Khái niệm: `02-CONTEXT.md` A2.
-- `tools/baselines/train_xie_sgc.py` (env torch + CompressAI như `run_compressai_zoo.py`):
-  - nạp `bmshj2018-hyperprior(quality=q, metric='mse', pretrained=True)`, q ∈ {1, 2, 3};
-  - chỉ `g_a` và `h_a` có `requires_grad`; `g_s`, `h_s`, `entropy_bottleneck`, `gaussian_conditional`
-    đóng băng (kể cả bảng CDF — không gọi `update()` lại cho phần đã đóng băng); aux loss bỏ qua;
-  - dữ liệu: ảnh **train split** của một site (`--site-id`), resize cạnh dài 512 rồi crop 256 ngẫu
-    nhiên; mask `W` từ bbox con vật trong `phase2/detections/originals.jsonl` (cùng ngưỡng DATA-06),
-    1 trong bbox, `--bg-weight` (mặc định 0,001) ngoài bbox; ảnh rỗng vẫn dùng (toàn bộ là nền);
-  - loss `bpp_y + bpp_z + λ_q · 255² · mean(W ⊙ (x − x̂)²)` với λ_q của CompressAI
-    (q1 = 0,0018, q2 = 0,0035, q3 = 0,0067); `--bg-weight 1` cho Xie-FT;
-  - số bước cố định cho mọi site (định bằng pilot), Adam, lưu state encoder + optimizer để resume;
-  - sau train: code + decode ảnh `BASELINE_DEV` **của site đó** bằng entropy coder thật, ghi vào
-    kho `BASELINE_ROOT/xie-sgc_ls512/q<q>/` cùng định dạng `run_classical.py` để `score_archive()`
-    chấm (curve `xie-sgc_ls512`, `exp_id = p2dev_xie-sgc_ls512__q<q>`); `run_info.json` ghi
-    `bg_weight`, số bước, site, hash trọng số decoder.
-- Test local (model CompressAI giả như `tests/test_compressai_rate.py`): chỉ encoder đổi trọng số,
-  decoder giữ nguyên bit-by-bit; `W` khớp bbox sau resize/crop; ảnh rỗng cho `W` toàn nền; chạy lại
-  với `--skip-existing` không train lại.
-- Notebook Eval: bước mới sau CompressAI zoo — pilot 1 site (site nhiều ảnh train nhất) ở q = 2 để
-  đo thời gian → chạy 20 site × q = 1/2/3 → chấm. Kho chung một curve cho cả 20 site (mỗi ảnh nén bằng
-  model site của nó). Xie-FT chạy sau cùng, chỉ khi còn CU.
-- Đồ thị: SSIM theo compression ratio (trục của bài Xie) gồm JPEG, Ballé pretrained, Xie-FT,
-  Xie-SGC, B0; số công bố của bài là điểm tham khảo riêng.
+### ~~Plan 02-07~~ — chuyển sang đầu Phase 3 (07/10)
+Baseline tái hiện Xie-SGC (EVAL-17) không còn thuộc Phase 2. Spec đầy đủ: `.planning/phases/03-h1-fine-tuning-th-ch-ng-mi-n/XIE-SGC-SPEC.md` (plan 03-01 dự kiến).
 
 **Thứ tự:** 02-01 → 02-02 → 02-03 có thể làm ngay ở máy local (0 CU). 02-04 JPEG/WebP chạy được
 local. 02-05 và 02-06 cần Colab GPU, gộp vào **1–2 phiên Colab** sau khi Phase 1 đóng (đã có số đo
