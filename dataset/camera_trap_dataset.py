@@ -16,6 +16,9 @@ import numpy as np
 from PIL import Image
 import torch.utils.data as data
 
+from utils.illumination import apply_sidecar, load_sidecar
+from utils.image_geometry import resize_for_processing, scale_boxes
+
 
 def _load_jsonl(path: Path) -> List[dict]:
     rows = []
@@ -49,6 +52,10 @@ def _austral_season(datetime_text: Optional[str]) -> str:
 
 
 _SEASONS = ("austral summer", "austral autumn", "austral winter", "austral spring")
+# Light source, not sensor: night frames are flash-lit colour or IR grayscale
+# depending on the camera (utils.illumination), so the prompt names neither.
+NIGHT_PROMPT = "night image"
+DAY_PROMPT = "daylight image"
 
 
 def encode_domain_metadata(row: Mapping) -> int:
@@ -65,7 +72,7 @@ def prompt_from_domain_metadata(
     site_id: Optional[str] = None,
     habitat: Optional[str] = None,
 ) -> str:
-    illumination = "infrared night image" if code & 1 else "daylight RGB image"
+    illumination = NIGHT_PROMPT if code & 1 else DAY_PROMPT
     season = _SEASONS[(int(code) >> 1) & 0b11]
     parts = ["camera trap wildlife photograph", illumination, season]
     if site_id:
@@ -87,7 +94,7 @@ def build_domain_prompt(
     parts = ["camera trap wildlife photograph"]
     illumination = row.get("illumination")
     if include_illumination and illumination:
-        parts.append("infrared night image" if illumination == "night" else "daylight RGB image")
+        parts.append(NIGHT_PROMPT if illumination == "night" else DAY_PROMPT)
     if include_season:
         parts.append(_austral_season(row.get("datetime")))
     site_id = str(row.get("site_id") or "")
@@ -197,6 +204,8 @@ class CameraTrapDataset(data.Dataset):
         include_season_in_prompt: bool = True,
         habitat_map: Optional[str] = None,
         domain_metadata_bits: int = 8,
+        processing_long_side: Optional[int] = None,
+        illumination_sidecar: Optional[str] = None,
     ) -> None:
         super().__init__()
         if split not in {"train", "val", "test"}:
@@ -205,12 +214,17 @@ class CameraTrapDataset(data.Dataset):
             raise ValueError(f"invalid crop_type {crop_type!r}")
         if not 0.0 <= bbox_crop_probability <= 1.0:
             raise ValueError("bbox_crop_probability must be in [0, 1]")
+        if processing_long_side is not None and int(processing_long_side) <= 0:
+            raise ValueError("processing_long_side must be positive")
 
         self.manifest_path = Path(manifest_path)
         self.data_root = Path(data_root)
         self.split = split
         self.out_size = int(out_size)
         self.crop_type = crop_type
+        # INFRA-01/EVAL-11: crops come from the frame at the coding resolution so
+        # animals have the same pixel size in training and in evaluation.
+        self.processing_long_side = int(processing_long_side) if processing_long_side else None
         self.site_id = site_id
         self.min_detection_confidence = float(min_detection_confidence)
         self.bbox_crop_probability = float(bbox_crop_probability)
@@ -230,6 +244,12 @@ class CameraTrapDataset(data.Dataset):
             for row in rows
             if row.get("split") == split and (site_id is None or row.get("site_id") == site_id)
         ]
+        if illumination_sidecar:
+            # Light-source day/night labels (utils.illumination) replace the
+            # manifest's capture-hour proxy for H3 metadata and logging.
+            if not Path(illumination_sidecar).is_file():
+                raise FileNotFoundError(f"illumination sidecar not found: {illumination_sidecar}")
+            apply_sidecar(self.rows, load_sidecar(illumination_sidecar))
         if not self.rows:
             suffix = f" and site_id={site_id!r}" if site_id else ""
             raise ValueError(f"no rows for split={split!r}{suffix} in {manifest_path}")
@@ -319,6 +339,12 @@ class CameraTrapDataset(data.Dataset):
         image_path = self.data_root / Path(row["relative_path"])
         image = self._open_image(image_path)
         boxes = self._boxes_for(row, *image.size)
+        resized = resize_for_processing(image, self.processing_long_side)
+        if resized.size != image.size:
+            boxes = scale_boxes(
+                boxes, resized.width / image.width, resized.height / image.height
+            )
+            image = resized
         source, roi_mask = self._joint_transform(image, boxes)
         target = (source * 2.0 - 1.0).astype(np.float32)
         tag_record = self.tags.get(str(row["image_id"]), {})
@@ -343,6 +369,10 @@ class CameraTrapDataset(data.Dataset):
             "hint": source.astype(np.float32),
             "txt": prompt,
             "roi_mask": roi_mask.astype(np.float32),
+            # INFRA-02: share of the crop covered by animal boxes; meaningful
+            # only when detections are loaded (``roi_known``).
+            "roi_fraction": np.float32(roi_mask.mean()),
+            "roi_known": np.float32(1.0 if self.detections else 0.0),
             "domain_metadata_bits": np.float32(self.domain_metadata_bits),
             "tag_payload_bits": np.float32(tag_payload_bits),
             "image_id": str(row["image_id"]),

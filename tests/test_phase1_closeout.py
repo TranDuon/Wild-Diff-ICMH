@@ -83,3 +83,25 @@ def test_closeout_requires_canonical_smoke_metrics():
     with pytest.raises(RuntimeError, match="missing metrics"):
         _build(result_rows=_result_rows()[:2])
 
+
+
+def test_closeout_prefers_steady_throughput_over_wall_clock():
+    report = _build(smoke_elapsed_seconds=300.0, steady_seconds_per_step=2.0)
+    calibration = report["calibration"]
+    assert calibration["source"] == "measured_steady_throughput"
+    assert calibration["wall_clock_seconds_per_step"] == 15.0
+    assert calibration["seconds_per_optimizer_step"] == 2.0
+    assert calibration["projected_elapsed_seconds"] == 4000.0
+
+
+def test_closeout_uses_measured_cu_for_remaining_budget():
+    report = _build(steady_seconds_per_step=2.0, measured_cu_consumed=7.5)
+    calibration = report["calibration"]
+    assert calibration["consumed_cu_source"] == "colab_available_delta"
+    assert calibration["remaining_budget_cu"] == pytest.approx(0.5)
+    assert calibration["recommendation"] == "do_not_run_2k"
+
+
+def test_closeout_rejects_non_positive_steady_throughput():
+    with pytest.raises(ValueError, match="steady seconds"):
+        _build(steady_seconds_per_step=0.0)

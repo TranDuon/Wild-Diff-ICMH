@@ -1,5 +1,8 @@
 from typing import Dict, Any
+import json
 import os
+import time
+from pathlib import Path
 
 import numpy as np
 import lightning.pytorch as pl
@@ -16,8 +19,144 @@ from .mixins import ImageLoggerMixin
 
 __all__ = [
     "ModelCheckpoint",
-    "ImageLogger"
+    "ImageLogger",
+    "ThroughputMonitor",
+    "CropStatsMonitor",
 ]
+
+
+class CropStatsMonitor(Callback):
+    """
+    INFRA-02: log how many training crops actually contain an animal.
+
+    Uses the ``roi_fraction``/``roi_known`` fields of ``CameraTrapDataset``;
+    nothing is logged when the run has no detection sidecar.  Writes
+    ``<default_root_dir>/<output_name>`` at the end of each ``fit``.
+    """
+
+    def __init__(self, output_name: str = "crop_stats.json", log_every_n_steps: int = 50) -> None:
+        super().__init__()
+        self.output_name = output_name
+        self.log_every_n_steps = int(log_every_n_steps)
+        self._crops = 0
+        self._with_animal = 0
+        self._coverage = 0.0
+
+    def on_train_batch_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule, outputs: STEP_OUTPUT,
+        batch: Any, batch_idx: int
+    ) -> None:
+        if not isinstance(batch, dict) or "roi_fraction" not in batch:
+            return
+        known = torch.as_tensor(batch.get("roi_known", 0.0)).float().flatten()
+        if known.numel() == 0 or float(known.max()) <= 0:
+            return
+        fraction = torch.as_tensor(batch["roi_fraction"]).float().flatten()
+        self._crops += int(fraction.numel())
+        self._with_animal += int((fraction > 0).sum())
+        self._coverage += float(fraction.sum())
+        if self._crops and trainer.global_step % self.log_every_n_steps == 0:
+            pl_module.log("train/crop_with_animal_ratio", self._with_animal / self._crops,
+                          on_step=True, on_epoch=False, prog_bar=False)
+
+    @rank_zero_only
+    def on_train_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if not self._crops:
+            return
+        report = {
+            "crops": self._crops,
+            "crops_with_animal": self._with_animal,
+            "crop_with_animal_ratio": self._with_animal / self._crops,
+            "mean_roi_fraction": self._coverage / self._crops,
+            "global_step_end": int(trainer.global_step),
+        }
+        output = Path(trainer.default_root_dir) / self.output_name
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(f"CropStatsMonitor: {report['crop_with_animal_ratio']:.1%} of crops contain an animal", flush=True)
+        except OSError as exc:  # logging must never block the final checkpoint save
+            print(f"CropStatsMonitor: could not write report: {exc!r}", flush=True)
+
+
+class ThroughputMonitor(Callback):
+    """
+    Measure steady-state training speed and write it to ``<default_root_dir>/<output_name>``.
+
+    Wall-clock time of a short run is dominated by model construction and validation, so it
+    overstates the cost of long runs. This callback times consecutive training batches only:
+    the timer restarts after every validation loop and the first ``warmup_batches`` intervals
+    are discarded. Checkpoint writes inside training stay included because long runs pay them too.
+    """
+
+    def __init__(self, output_name: str = "throughput.json", warmup_batches: int = 8) -> None:
+        super().__init__()
+        self.output_name = output_name
+        self.warmup_batches = int(warmup_batches)
+        self._last = None
+        self._seen = 0
+        self._intervals = []
+        self._validation_runs = 0
+        self._start_step = None
+
+    def on_train_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        self._last = None
+        self._seen = 0
+        self._intervals = []
+        self._validation_runs = 0
+        self._start_step = int(trainer.global_step)
+
+    def on_validation_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        self._last = None
+        self._validation_runs += 1
+
+    def on_train_batch_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule, outputs: STEP_OUTPUT,
+        batch: Any, batch_idx: int
+    ) -> None:
+        now = time.perf_counter()
+        if self._last is not None:
+            self._seen += 1
+            if self._seen > self.warmup_batches:
+                self._intervals.append(now - self._last)
+        self._last = now
+
+    @rank_zero_only
+    def on_train_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if not self._intervals:
+            print("ThroughputMonitor: no steady-state batches measured; nothing written", flush=True)
+            return
+        try:
+            self._write_report(trainer)
+        except Exception as exc:  # measurement must never block the final checkpoint save
+            print(f"ThroughputMonitor: could not write report: {exc!r}", flush=True)
+
+    def _write_report(self, trainer: pl.Trainer) -> None:
+        accumulate = int(trainer.accumulate_grad_batches)
+        median_batch = float(np.median(self._intervals))
+        report = {
+            "schema_version": 1,
+            "batches_measured": len(self._intervals),
+            "warmup_batches": self.warmup_batches,
+            "validation_runs_excluded": self._validation_runs,
+            "median_seconds_per_batch": median_batch,
+            "mean_seconds_per_batch": float(np.mean(self._intervals)),
+            "accumulate_grad_batches": accumulate,
+            "seconds_per_optimizer_step": median_batch * accumulate,
+            "global_step_start": self._start_step,
+            "global_step_end": int(trainer.global_step),
+            "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        }
+        output = Path(trainer.default_root_dir) / self.output_name
+        output.parent.mkdir(parents=True, exist_ok=True)
+        temporary = output.with_name(output.name + ".part")
+        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(temporary, output)
+        print(
+            f"ThroughputMonitor: {report['seconds_per_optimizer_step']:.2f} s/optimizer step "
+            f"({report['batches_measured']} batches) -> {output}",
+            flush=True,
+        )
 
 class ImageLogger(Callback):
     """

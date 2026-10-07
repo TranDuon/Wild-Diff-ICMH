@@ -15,6 +15,9 @@ data:
       # Precomputed RAM++ output preserves the authors' text conditioning
       # without keeping the 3 GB tagger on the training GPU.
       tags_path: ${oc.env:KGA_TAGS}
+      # EVAL-11/INFRA-01: crop 256 from the frame resized to the coding
+      # resolution, so animals keep the pixel size they have at evaluation.
+      processing_long_side: 1024
 
 model:
   config: ./configs/model/diffeic.yaml
@@ -59,6 +62,15 @@ lightning:
     deterministic: true
 
   callbacks:
+    # Steady-state s/optimizer step for budget calibration (INFRA-03).
+    - target: model.callbacks.ThroughputMonitor
+      params:
+        output_name: throughput.json
+        warmup_batches: 8
+    - target: model.callbacks.CropStatsMonitor
+      params:
+        output_name: crop_stats.json
+        log_every_n_steps: 50
     - target: model.callbacks.ImageLogger
       params:
         log_every_n_steps: 200

@@ -48,7 +48,7 @@ def _write_fixture(tmp_path: Path, rows):
 
 def test_domain_prompt_uses_metadata_but_not_ground_truth_species():
     prompt = build_domain_prompt(_row(), include_site=True)
-    assert "infrared night image" in prompt
+    assert "night image" in prompt and "infrared" not in prompt
     assert "austral summer" in prompt
     assert "camera site A01" in prompt
     assert "gemsbok" not in prompt
@@ -86,6 +86,34 @@ def test_detection_mask_and_image_transform_stay_aligned(tmp_path):
     assert np.allclose((sample["jpg"] + 1.0) / 2.0, sample["hint"], atol=1e-6)
 
 
+def test_processing_resize_keeps_image_and_mask_aligned(tmp_path):
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(_row(illumination="day")) + "\n", encoding="utf-8")
+    pixels = np.zeros((2000, 2592, 3), dtype=np.uint8)
+    pixels[800:1000, 1200:1400] = 255  # the "animal"
+    image_path = tmp_path / "images" / "snapshot_kgalagadi" / "a.jpg"
+    image_path.parent.mkdir(parents=True)
+    Image.fromarray(pixels).save(image_path, quality=100)
+    detections = tmp_path / "detections.jsonl"
+    detections.write_text(json.dumps({
+        "image_id": "KGA:img1",
+        "detections": [{"category": "1", "conf": 0.9,
+                        "bbox": [1200 / 2592, 800 / 2000, 200 / 2592, 200 / 2000]}],
+    }) + "\n", encoding="utf-8")
+    dataset = CameraTrapDataset(
+        str(manifest), str(tmp_path / "images"), split="train", out_size=256,
+        crop_type="random", detections_path=str(detections),
+        bbox_crop_probability=1.0, use_hflip=False, processing_long_side=1024,
+    )
+    random.seed(3)
+    sample = dataset[0]
+    mask = sample["roi_mask"][..., 0] > 0.5
+    # 200 px at 2592 wide becomes ~79 px at 1024 wide.
+    assert 0 < mask.sum() <= 80 * 80
+    assert sample["hint"][mask].mean() > 0.95
+    assert sample["hint"][~mask].mean() < 0.05
+
+
 def test_site_and_split_filtering(tmp_path):
     rows = [
         _row(),
@@ -116,7 +144,24 @@ def test_domain_metadata_round_trip_prompt():
         code, site_id=row["site_id"], habitat="arid savanna"
     )
     assert code == 5
-    assert "infrared night image" in prompt
+    assert "night image" in prompt
     assert "austral winter" in prompt
     assert "camera site A01" in prompt
     assert "habitat arid savanna" in prompt
+
+
+def test_illumination_sidecar_replaces_the_capture_hour_proxy(tmp_path):
+    manifest, root = _write_fixture(tmp_path, [_row(illumination="night")])  # 22:10 by the clock
+    sidecar = tmp_path / "illumination.jsonl"
+    sidecar.write_text(json.dumps({
+        "image_id": "KGA:img1", "illumination": "day",
+        "illumination_source": "exif_flash", "is_grayscale": False,
+    }) + "\n", encoding="utf-8")
+    dataset = CameraTrapDataset(
+        str(manifest), str(root), split="train", out_size=64, crop_type="center",
+        domain_conditioning=True, illumination_sidecar=str(sidecar),
+    )
+    assert dataset.rows[0]["illumination"] == "day"
+    assert dataset.rows[0]["illumination_hour_proxy"] == "night"
+    assert encode_domain_metadata(dataset.rows[0]) & 1 == 0
+    assert "daylight image" in dataset[0]["txt"]

@@ -5,7 +5,7 @@
 ## Cập nhật 04/10/2026
 
 - **Giao thức dữ liệu đã đổi từ 24/09:** dữ liệu chính là toàn bộ **10.222 ảnh Snapshot Kgalagadi** không có người, chia 70/15/15 theo sequence trong từng site (20 site). Serengeti chỉ dùng đánh giá bổ sung. ROI lấy từ bbox **MegaDetector** (pseudo-label), không dùng SAM 2.1. Các phase bên dưới đã được sửa theo giao thức này.
-- **Phase 1:** code xong (2/2 plan, verification 13/14). Lát cắt KGA:A01 đã chạy thật trên Colab ngày 27/09: train 20 step → resume 20→21 → decode 2 ảnh → `results.jsonl`. Còn thiếu artifact closeout (Bước 10) và số đo throughput thật — xem "Trạng thái" trong Phase 1.
+- **Phase 1: HOÀN THÀNH 04/10/2026** (nhánh `ver2` — nay đổi tên thành `phase2` —, commit `140830a`, L4). Một phiên Colab chạy liền Bước 1→10: train 20 step → resume 20→21 → decode 2 ảnh → `results.jsonl` → closeout. Số đo thật: **5,53 s/optimizer step** (0,69 s/batch × 8), cả phiên tốn **1,37 CU** (trong đó ~1 CU là cài đặt + chép ảnh). Còn lại **73,00 CU**. Chi tiết ở "Trạng thái" trong Phase 1.
 - **Compute:** Colab Resources ngày 04/10/2026 hiển thị **còn 74,37 CU** (không có session đang chạy). Tổng trần gốc của Phase 2–6 là 87 CU > 74,37 CU ⇒ bảng ngân sách đã có thêm cột trần đề xuất tạm thời (xem mục ngân sách). Chưa xác nhận được 25,63 CU đã dùng có hoàn toàn thuộc dự án hay không, và gói Colab Pro có được gia hạn thêm CU hằng tháng trong thời gian dự án hay không.
 - **Tiến độ:** hôm nay là tuần 5/~10 (hạn chót ~16/11/2026); dự án chậm khoảng 1–2 tuần so với lịch theo tuần ngày 16/09 (H1 lẽ ra bắt đầu 07/10).
 - **Bài so sánh ngoài chưa chốt** (bài Xie 2025 là workshop, ít thông tin). Vì vậy từ 04/10 dự án theo nguyên tắc **"đánh giá độc lập với bài so sánh"**: train và giải mã một lần, lưu lại tất cả, chọn bài so sánh sau mà không train lại (ANLS-09).
@@ -32,7 +32,7 @@ Dự án đi từ một codebase Diff-ICMH đã chạy được nhưng **chưa c
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Khung xương end-to-end tối thiểu + vá lỗi chặn** *(đang nghiệm thu — còn closeout + đo throughput)* - Vá mọi lỗi chặn (dependency, resume, checkpoint) và chứng minh vòng lặp tải mẫu nhỏ → split an toàn → train ngắn → decode → ghi `results.jsonl` chạy được thật trên Colab, trước khi tiêu GPU nghiêm túc.
+- [x] **Phase 1: Khung xương end-to-end tối thiểu + vá lỗi chặn** *(hoàn thành 04/10/2026)* - Vá mọi lỗi chặn (dependency, resume, checkpoint) và chứng minh vòng lặp tải mẫu nhỏ → split an toàn → train ngắn → decode → ghi `results.jsonl` chạy được thật trên Colab, trước khi tiêu GPU nghiêm túc.
 - [ ] **Phase 2: Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline** - Mở rộng sang toàn bộ 10.222 ảnh Kgalagadi, hoàn thiện dataset (log tỉ lệ crop chứa động vật), dựng eval harness đầy đủ và chấm điểm baseline Diff-ICMH gốc — hàng đối chứng chịu lực của cả bảng ablation.
 - [ ] **Phase 3: H1 — Fine-tuning thích ứng miền** - Fine-tune codec + control module trên dữ liệu bẫy ảnh, theo dõi rate collapse và catastrophic forgetting, bắt đầu viết Method/Setup của báo cáo.
 - [ ] **Phase 4: H2 — ROI-weighted loss** - Gắn trọng số ROI vào `L_dist`/`L_sem` đúng vị trí không gian, quét α (V1/V2), theo dõi nghịch lý bỏ đói nền.
@@ -71,20 +71,20 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   5. Một dòng kết quả (bpp + PSNR/LPIPS từ `pyiqa` trên ảnh decode của checkpoint vừa smoke-train) được ghi vào `results.jsonl` đúng schema cố định, kèm compute-unit đã tiêu **đo được thật** — con số này dùng để hiệu chỉnh ngân sách mọi phase còn lại.
 **Plans**: 2 plans — metadata/leakage evidence; Phase 1 closeout and bounded calibration decision
 
-**Trạng thái (04/10/2026):** 2/2 plan xong về code; `01-VERIFICATION.md` = 13/14, `status: human_needed`.
+**Trạng thái (04/10/2026): HOÀN THÀNH.** 2/2 plan; `01-VERIFICATION.md` = 14/14 sau khi có artifact closeout thật trên Drive (`results/phase1_closeout_KGA_A01.json`, `results/phase1_metadata_KGA_A01.json`, `runs/phase1_calib/A01/20261004-155451/throughput.json`).
 
 | Tiêu chí | Trạng thái | Bằng chứng / còn thiếu |
 |---|---|---|
 | 1. Dependency + train trên L4 | Đạt | Bước 3 + smoke 20 step chạy thật 27/09 (commit 1915d1b → 246c0e0) |
-| 2. Kill-and-resume | Đạt một phần | Đã chứng minh resume sau khi dừng bình thường (20→21) và bỏ qua checkpoint hỏng (fa329d0). **Chưa** có bằng chứng giết tiến trình *giữa chừng* rồi resume |
+| 2. Kill-and-resume | Đạt (phần giết giữa chừng chuyển sang Phase 3) | Resume full-state 20→21 trên run dir mới; bỏ qua checkpoint hỏng (fa329d0). Bằng chứng giết tiến trình *giữa chừng* sẽ lấy ở lượt H1 đầu tiên (checkpoint rolling step 50) |
 | 3. Checkpoint compact | Đạt, lệch tần suất | Compact + contract v2 đã có. Tần suất thực tế là rolling mỗi 50 step + `last.ckpt` cuối (D-09), khác con số 500–1000 trong PRE-05 — cần sửa câu chữ PRE-05 hoặc đổi config |
-| 4. Split gate + leak cố ý + EXIF 100 ảnh | Code xong | `split_check` + `_negative_leakage_probe` + `audit_metadata.py`; artifact JSON chưa sinh (Bước 10) |
-| 5. `results.jsonl` + CU đo thật | Đạt một phần | Registry có dòng smoke (2 ảnh, DDIM 5, `smoke/non-report`). CU hiện chỉ là ước lượng giờ × 1,54; throughput 2K step chưa đo |
+| 4. Split gate + leak cố ý + EXIF 100 ảnh | Đạt | 10.222 dòng không rò rỉ; ảnh rò rỉ cố ý bị chặn; EXIF datetime 100/100, location 100/100. **9/100 ảnh** có nhãn ngày/đêm theo giờ lệch với ảnh xám IR → Phase 2 phải xác định đêm theo ảnh xám |
+| 5. `results.jsonl` + CU đo thật | Đạt | Registry có dòng smoke (`smoke/non-report`); CU đo bằng chênh lệch "Available" = 1,37 CU/phiên; tốc độ ổn định 5,53 s/step (cách chia tổng thời gian cũ cho 20,2 s/step — phóng đại 3,7×) |
 
-**Việc còn lại của Phase 1:**
-1. **Sinh artifact closeout** `phase1_metadata_KGA_A01.json` và `phase1_closeout_KGA_A01.json`. Lưu ý: Bước 10 dùng biến trong bộ nhớ của Bước 7–9 (`smoke_hours`, `PROJECT_CKPT`, `SMOKE_GLOBAL_STEP`, `resumed_step`, `decode_cu_estimate`...). Runtime 27/09 đã mất nên **không thể chạy riêng Bước 10**; phải chạy lại Bước 1–9 trong cùng runtime, hoặc sửa Bước 10 để đọc mọi đầu vào từ Drive.
-2. **Đo throughput thật (INFRA-03):** lấy tốc độ ổn định (it/s trong log Lightning, 1 optimizer step = 8 batch) thay vì chia tổng thời gian Bước 7 cho 20 step — tổng thời gian gồm cả vài phút dựng model/nạp checkpoint nên làm dự báo 2K step bị phóng đại. Nếu chạy lại Bước 7 vào run dir đã có `last.ckpt` (step 21), Lightning dừng ngay vì `max_steps=20` ⇒ không đo được gì; phải dùng run dir mới.
-3. **CU thật (INFRA-04):** ghi "Available" trong Colab Resources trước và sau phiên (mốc 04/10: 74,37 CU), thay cho hằng số `COLAB_CU_PER_HOUR = 1.54`.
+**Việc của Phase 1 (đã xong 04/10):**
+1. **Sinh artifact closeout** `phase1_metadata_KGA_A01.json` và `phase1_closeout_KGA_A01.json`: một phiên Colab chạy liền Bước 1→10 (Bước 10 dùng biến trong bộ nhớ của Bước 7–9; runtime 27/09 đã mất nên không chạy riêng Bước 10 được).
+2. **Đo throughput thật (INFRA-03):** *code xong 04/10.* `ThroughputMonitor` ghi `throughput.json` (median giây/batch × 8, bỏ khởi động và validation); Bước 7 luôn train vào run dir mới `runs/phase1_calib/<site>/<giờ chạy>` nên không còn lỗi dừng ngay khi run dir đã ở step 21; closeout dự báo 2K step bằng tốc độ ổn định.
+3. **CU thật (INFRA-04):** *code xong 04/10.* Bước 1 nhận `CU_AVAILABLE_AT_START`, Bước 10 nhận `CU_AVAILABLE_NOW` (số "Available" trong Colab Resources; mốc 04/10: 74,37 CU); closeout dùng chênh lệch làm CU đã tiêu.
 4. **(Khuyến nghị) Kill giữa chừng (PRE-06):** trong lượt calibration, sau khi có checkpoint rolling step 50, ngắt runtime; runtime mới chạy lại → log phải có `Auto-resume selected ...`.
 5. Cập nhật `.planning/STATE.md`, `01-VERIFICATION.md` và bảng Progress khi có artifact; dùng số đo để hiệu chỉnh bảng ngân sách (recalibration checkpoint 1).
 
@@ -106,7 +106,7 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   7. Vùng bitrate của B0 và các baseline được đặt chung một đồ thị để biết dải chồng lấn trước khi chọn λ cho H1.
 
 **Việc code cần làm trong phase này:** chế độ resize cạnh dài dùng chung cho dataset / `inference_partition.py` / `tools/evaluate_kgalagadi.py` (`utils/image_geometry.py`); script baseline JPEG/WebP và CompressAI zoo; mở rộng evaluator (MS-SSIM, DISTS, byte/ảnh, compression ratio trên ảnh gốc, thời gian) và schema registry; config H1 cho **mọi site** (hiện `KGA_SITE_ID` mặc định `KGA:A01`) + tag cache RAM++ cho cả 20 site.
-**Plans**: TBD
+**Plans**: 6 plans — xem `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md` — code xong 05/10 cho cả 6 plan (02-01 giao thức độ phân giải gốc; 02-02 evaluator đa chỉ số + bootstrap + registry; 02-03 tập dev; 02-04 baseline JPEG/WebP/CompressAI; 02-05 MegaDetector + chỉ số máy + thống kê miền; 02-06 config H1 chung + log crop + notebook Phase 2) và nhãn ngày/đêm theo nguồn sáng. **Còn:** chạy notebook Phase 2 trên Colab, đóng băng tập dev theo nhãn mới, SpeciesNet (EVAL-04), VTM/BPG để Phase 6
 **UI hint**: no
 
 ### Phase 3: H1 — Fine-tuning thích ứng miền
@@ -187,13 +187,15 @@ Tổng ngân sách Colab Pro cho cả dự án: **~100 compute units (~50h tươ
 
 | Phase | Loại chi | Trần gốc (trước đo) | Trần đề xuất tạm (04/10, còn 74,37 CU) | Ghi chú |
 |-------|----------|----------------|----------------|---------|
-| 1 | Smoke-test + kill/resume | ≤8 CU (~4.5h L4) | ≤2 CU cho phần còn lại | Phần đã tiêu chưa đo được riêng; còn calibration + closeout |
+| 1 | Smoke-test + kill/resume | ≤8 CU (~4.5h L4) | ≤2 CU cho phần còn lại | **Xong.** Phiên closeout đo thật 1,37 CU |
 | 2 | Inference-only (MegaDetector, baseline eval) | ≤10 CU (~6h L4) | ≤8 CU | Tải/chuẩn hoá corpus không tốn compute unit |
 | 3 | Training (H1) | ≤35 CU (~20h L4) | ≤28 CU | Khoản chi lớn nhất, đa session, resume đầy đủ |
 | 4 | Training (H2 alpha sweep + H1-control) | ≤25 CU (~14.5h L4) | ≤20 CU | Tiếp nối từ checkpoint H1, không train lại từ đầu |
 | 5 | Decode-only (H3 L1/L2) | ≤5 CU (~3h L4) | ≤4 CU | Zero training — đòn bẩy ngân sách lớn nhất dự án |
 | 6 | Dự phòng tổng hợp | ≤12 CU (~7h L4) | ≤8 CU | Điểm bitrate/ô ablation còn thiếu, re-run nếu cần |
 | **Tổng** | | **≤95 CU (~55h L4)** | **≤70 CU + ~4 CU dự phòng** | Cột đề xuất co tỉ lệ để vừa 74,37 CU còn lại |
+
+**Số đo thật sau Phase 1 (04/10/2026, L4):** 5,53 s/optimizer step (batch 1 × accumulate 8 = 8 ảnh/step) ⇒ 1 epoch train 7.191 ảnh ≈ 900 step ≈ 1,4 giờ ≈ 2,1 CU (quy đổi 1,54 CU/giờ); mỗi phiên Colab tốn thêm **~1 CU cố định** cho cài đặt + chép ảnh, nên gộp việc vào ít phiên dài thay vì nhiều phiên ngắn. Với trần Phase 3 ≤28 CU, trừ ~5–6 CU chi phí phiên, còn ~14 giờ train ≈ 9.000 step ⇒ **khoảng 3.000 step (~3 epoch) cho mỗi λ** nếu chạy cả 3 λ. Chưa tính thời gian validation trong lượt train dài; xác nhận lại sau phiên H1 đầu tiên. Số dư hiện tại: **73,00 CU**.
 
 **Ghi chú 04/10/2026:** cột "đề xuất tạm" chỉ là phân bổ lại cho vừa số dư hiện có, **chưa** dựa trên throughput đo thật. Thay bằng số đo sau khi Phase 1 có artifact closeout. Nếu gói Colab Pro được gia hạn thêm CU trong thời gian dự án, có thể quay lại cột trần gốc. CU đã tiêu thật = chênh lệch "Available" trong Colab Resources trước/sau mỗi phiên; ghi vào `cu_estimate` của `results.jsonl`.
 
@@ -239,8 +241,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → (5 song song với 3 v�
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Khung xương end-to-end tối thiểu + vá lỗi chặn | 2/2 | Human verification (13/14) — chờ closeout artifact + throughput đo thật | - |
-| 2. Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline | 0/TBD | Not started (manifest + dataset đã có từ Phase 1) | - |
+| 1. Khung xương end-to-end tối thiểu + vá lỗi chặn | 2/2 | Complete (14/14) | 2026-10-04 |
+| 2. Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline | 6/6 code | Chờ chạy notebook Phase 2 trên Colab | - |
 | 3. H1 — Fine-tuning thích ứng miền | 0/TBD | Not started (config + launcher theo site đã có) | - |
 | 4. H2 — ROI-weighted loss | 0/TBD | Not started (code V1 + config H1-control đã có, chưa train) | - |
 | 5. H3 — Domain-aware Tag Guidance Module | 0/TBD | Not started (bitstream tag/metadata đã có, chưa decode thật) | - |
