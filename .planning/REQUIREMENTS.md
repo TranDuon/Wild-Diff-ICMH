@@ -54,9 +54,10 @@ Mục tiêu: một bộ checkpoint và **một lần giải mã** dùng được
 - [ ] **EVAL-11**: Giao thức đo **end-to-end ở độ phân giải gốc**: đầu vào là ảnh gốc (2592×2000), đầu ra là ảnh cùng kích thước, mọi chỉ số tính so với ảnh gốc. Độ phân giải xử lý bên trong (thu nhỏ trước khi nén, phóng to sau khi giải mã) là tham số chọn trên tập dev, mặc định cạnh dài 1024. Crop 256 ở giữa ảnh chỉ dùng cho smoke test, không dùng cho số báo cáo
 - [ ] **EVAL-12**: Mọi lượt giải mã đều lưu trên Drive: bitstream, ảnh tái tạo ở độ phân giải gốc, thời gian encode/decode từng ảnh. Chỉ số mới được tính lại từ kho lưu trữ này, không giải mã lại
 - [ ] **EVAL-13**: Mỗi lượt đánh giá tính đủ bộ chỉ số: PSNR, SSIM, MS-SSIM, LPIPS, DISTS (FID khi đủ mẫu), SSIM foreground (bbox MegaDetector), byte/ảnh, bpp, compression ratio = 24·H·W / số bit (H, W của ảnh gốc), thời gian encode/decode, kích thước model; chỉ số tác vụ máy theo EVAL-02..07
-- [ ] **EVAL-14**: Baseline phổ quát chạy trên cùng tập và cùng giao thức EVAL-11: JPEG và WebP (CPU, quét chất lượng), các model pretrained của CompressAI (`bmshj2018-hyperprior`, `mbt2018`, `cheng2020-attn`, chỉ inference; hai model tự hồi quy `mbt2018`/`cheng2020-attn` dùng rate ước lượng từ likelihood — chế độ `--entropy-estimation` của CompressAI — vì entropy coder tuần tự tốn ~29 s/ảnh, ghi `rate` trong protocol), cùng với B0 (EVAL-10) và VTM/BPG (ANLS-06)
+- [ ] **EVAL-14**: Baseline phổ quát chạy trên cùng tập và cùng giao thức EVAL-11: JPEG và WebP (CPU, quét chất lượng), các model pretrained của CompressAI (`bmshj2018-hyperprior`, `mbt2018`, `cheng2020-attn`, chỉ inference; hai model tự hồi quy `mbt2018`/`cheng2020-attn` dùng rate ước lượng từ likelihood — chế độ `--entropy-estimation` của CompressAI — vì entropy coder tuần tự tốn ~29 s/ảnh, ghi `rate` trong protocol), cùng với B0 (EVAL-10), baseline tái hiện Xie-SGC (EVAL-17) và VTM/BPG (ANLS-06)
 - [ ] **EVAL-15**: Mỗi dòng `results.jsonl` ghi kèm thông tin giao thức: độ phân giải xử lý, độ phân giải đánh giá, thư viện + phiên bản SSIM, cách tính compression ratio, số bước DDIM, seed, định danh checkpoint (mở rộng schema EVAL-01, giữ tương thích ngược)
 - [ ] **EVAL-16**: Tập dev cố định lấy từ **validation** (vài trăm ảnh, phân tầng theo site, ngày/đêm, rỗng/có thú) dùng để chọn λ, núm giải mã, α, prompt và độ phân giải xử lý. Test split chỉ chạy một lần ở Phase 6
+- [ ] **EVAL-17** (thêm 07/10): Baseline tái hiện **Xie-SGC** — Xie et al., *Saliency-guided deployment-adaptive compression for wildlife camera traps* (CCAI@NeurIPS 2025, cùng Snapshot Kgalagadi; không công bố code/split). Từ `bmshj2018-hyperprior` pretrained (MSE, q = 1/2/3), fine-tune **encoder `g_a` + `h_a` riêng từng site** trên train split của site đó, giữ `g_s`, `h_s` và entropy model đóng băng; loss `R_y + R_z + λ_q·mean(W⊙(x−x̂)²)` với `W` = 1 trong bbox con vật MegaDetector (ngưỡng DATA-06), 0,001 ngoài bbox. Đối chứng **Xie-FT** (`W` ≡ 1) làm nếu còn CU. Không làm LoRA và blur nền (ghi Limitations). Chấm trên `BASELINE_DEV` cạnh dài 512, so cặp với B0, mã hoá entropy thật, đủ chỉ số EVAL-13 + MegaDetector trước/sau, thêm đồ thị SSIM–compression ratio kiểu bài gốc. Số công bố của bài (403×, 253×) chỉ là điểm tham khảo, không so cặp. Trần ≤2 CU, pilot một site trước
 
 ### H1 — Domain-adaptive fine-tuning
 
@@ -99,7 +100,7 @@ Mục tiêu: một bộ checkpoint và **một lần giải mã** dùng được
 - [ ] **ANLS-06**: Anchor VTM/BPG chạy nền trên CPU để đặt kết quả vào bối cảnh, không cạnh tranh compute unit với training
 - [ ] **ANLS-07**: Failure taxonomy — phân loại các dạng lỗi quan sát được kèm ví dụ ảnh, không chỉ chọn ảnh đẹp
 - [ ] **ANLS-08**: Mọi figure sinh tự động từ `results.jsonl` qua `make_all_figures.py`, không hardcode số liệu
-- [ ] **ANLS-09**: Bài so sánh ngoài được chốt **trước khi vào Phase 6** (ứng viên: Xie et al., CCAI@NeurIPS 2025, cùng Snapshot Kgalagadi; *Class-Agnostic Triple Attention ... Wildlife Camera Trap Images* (Springer); SLIM, arXiv 2512.18200). Khi đã chốt: tính lại chỉ số của bài đó từ kho EVAL-12 và vẽ chung đồ thị — **không train lại**. Nếu bài có code công khai thì chạy lại trên đúng tập test và giao thức EVAL-11
+- [ ] **ANLS-09**: Bài so sánh ngoài: **đã chốt 07/10 là Xie et al. (CCAI@NeurIPS 2025)**, tái hiện thành baseline Xie-SGC ở Phase 2 (EVAL-17). Phase 6 đặt Xie-SGC (và Xie-FT nếu có) trên cùng đồ thị với B0–B4, theo cả chỉ số của bài (SSIM theo compression ratio) lẫn chỉ số máy, tính từ kho EVAL-12. Nguyên tắc **"không train lại"** áp cho các model Diff-ICMH của dự án; lượt fine-tune Ballé của Xie-SGC là ngoại lệ duy nhất, có giới hạn (≤2 CU, EVAL-17). Các ứng viên khác (*Class-Agnostic Triple Attention ... Wildlife Camera Trap Images* (Springer); SLIM, arXiv 2512.18200) chỉ thêm nếu được yêu cầu: tính lại chỉ số từ kho EVAL-12, không train
 
 ### Report — Đóng gói và bàn giao
 
@@ -185,6 +186,7 @@ Phase nào phủ requirement nào. Cập nhật khi tạo roadmap.
 | EVAL-14 | Phase 2 | Pending |
 | EVAL-15 | Phase 2 | Pending |
 | EVAL-16 | Phase 2 | Pending |
+| EVAL-17 | Phase 2 | Pending |
 | H1-01 | Phase 3 | Pending |
 | H1-02 | Phase 3 | Pending |
 | H1-03 | Phase 3 | Pending |
@@ -223,8 +225,8 @@ Phase nào phủ requirement nào. Cập nhật khi tạo roadmap.
 | REPT-05 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 70 total (59 ban đầu + 11 thêm ngày 04/10: EVAL-11..16, H1-05, H1-06, H3-09, H3-10, ANLS-09)
-- Mapped to phases: 70
+- v1 requirements: 71 total (59 ban đầu + 11 thêm ngày 04/10: EVAL-11..16, H1-05, H1-06, H3-09, H3-10, ANLS-09 + 1 thêm ngày 07/10: EVAL-17)
+- Mapped to phases: 71
 - Unmapped: 0 ✓
 
 ---

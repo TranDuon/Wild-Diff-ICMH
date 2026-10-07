@@ -30,6 +30,20 @@ Giải thích cho cả hai thành viên các khái niệm Phase 2 dùng. Giao th
   các model nén học sâu có sẵn của CompressAI (`bmshj2018-hyperprior` — gần giống codec bài Xie,
   `mbt2018`, `cheng2020-attn`), VTM/BPG nếu kịp. Có các đường này thì khi thầy chỉ định bài so sánh
   nào, gần như chắc đã có điểm tham chiếu chung.
+- **Xie-SGC (EVAL-17, thêm 07/10)** = bản **tự tái hiện** bài Xie et al. 2025 (CCAI@NeurIPS, cùng
+  Snapshot Kgalagadi), vì bài không công bố code hay split. Cách làm của bài: lấy Ballé hyperprior
+  pretrained, fine-tune **chỉ encoder** riêng cho từng site (decoder đóng băng, nên bên nhận dùng
+  nguyên decoder gốc), và dùng **SGC** (saliency-guided compression) = loss MSE có trọng số 1 trong
+  bbox con vật MegaDetector, 0,001 ngoài bbox, để dồn bit cho con vật và nén mạnh nền.
+  - Khác với `bmshj2018-hyperprior` ở EVAL-14: cùng model gốc, nhưng EVAL-14 chỉ inference, còn
+    Xie-SGC có thêm bước fine-tune encoder theo site + loss SGC. Khoảng cách giữa hai đường đo đúng
+    phần đóng góp của bài Xie.
+  - **Xie-FT** (trọng số đều, không SGC) là đối chứng trong chính bài, làm nếu còn CU. Cặp
+    Xie-FT → Xie-SGC tương ứng H1-control → H2 của dự án trên codec cổ điển (xem Phase 4, tiêu chí 6).
+  - Bỏ LoRA và blur nền (bài tự báo LoRA kém hơn một chút; blur đổi cả cách tính SSIM). Ghi vào
+    Limitations.
+  - Số bài công bố (tỉ lệ nén 403× có SGC, 253× không SGC) đo trên tập khác, nên chỉ vẽ làm điểm
+    tham khảo, không so cặp.
 
 ### A3. Bitrate, bpp, compression ratio, λ, đường RD
 - **bpp** (bit per pixel) = tổng số bit của file nén ÷ số pixel ảnh gốc. Càng nhỏ càng nén mạnh.

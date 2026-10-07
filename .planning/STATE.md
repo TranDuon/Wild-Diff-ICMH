@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 2 (Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline) — EXECUTING
-Plan: 6/6 code complete (05/10); chờ chạy `Wild_Diff_ICMH_Phase2_Eval.ipynb` trên Colab (kế hoạch: `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
+Plan: 6/7 code complete (05/10); 02-07 (Xie-SGC, EVAL-17) thêm 07/10, chưa code; chờ chạy `Wild_Diff_ICMH_Phase2_Eval.ipynb` trên Colab (kế hoạch: `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
 Status: Phase 1 hoàn thành 04/10/2026 (14/14, closeout thật trên L4). Còn 73,00 CU.
 Nhánh: `phase2` (đổi tên từ `ver2` ngày 05/10) chứa bằng chứng Phase 1 và toàn bộ Phase 2; chưa merge vào `main`. Hai notebook trên nhánh này clone `phase2`; khi merge phải đổi `BRANCH` về `main`.
-Last activity: 2026-10-06 - Completed quick task 261006-hxn: Phase 2 Eval notebook step 7 fix (estimated rate for autoregressive CompressAI, per-point scoring, auto-disconnect)
+Last activity: 2026-10-07 - Completed quick task 261007-l4e: thêm baseline tái hiện Xie-SGC (EVAL-17, Plan 02-07) vào kế hoạch
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -73,6 +73,7 @@ Progress: [██░░░░░░░░] 17%
 - [2026-10-04]: Thêm hai cải tiến chỉ ở encode/decode, không train: ép xám ảnh đêm khi giải mã (H3-09) và chọn bitrate theo nội dung bằng MegaDetector ở encoder (H3-10), gộp thành cấu hình B5. Ảnh nền tham chiếu theo site (V2-09) và fine-tune riêng từng site lớn (V2-10) đưa vào v2. Tổng 70 requirement v1.
 - [2026-10-04]: Phase 1 đóng với số đo thật: 5,53 s/optimizer step, ~1 CU chi phí cố định mỗi phiên Colab, 1,37 CU cho phiên closeout. Ngày/đêm theo giờ lệch ảnh xám IR ở 9/100 ảnh ⇒ Phase 2 xác định đêm theo ảnh xám.
 - [2026-10-05]: Ngày/đêm định nghĩa theo **nguồn sáng** (đêm = camera tự chiếu sáng bằng flash hoặc IR), xác định từ chính file ảnh để dùng được cho mọi dataset: EXIF Flash → ảnh xám IR → độ cao mặt trời (chỉ khi có toạ độ) → độ sáng pixel. Kgalagadi dùng flash trắng ⇒ ảnh đêm là ảnh màu; nhãn theo giờ cũ sai 32/78 ảnh "đêm" ở mẫu 450 ảnh. H3-05/06/07/09 sửa theo `is_grayscale`.
+- [2026-10-07]: Chốt bài so sánh ngoài là Xie et al. 2025 (ANLS-09). Tự tái hiện thành baseline Xie-SGC ở Phase 2 (EVAL-17, Plan 02-07): fine-tune encoder Ballé hyperprior riêng từng site, MSE trọng số bbox MegaDetector 1 : 0,001, q = 1/2/3, chấm trên `BASELINE_DEV` so cặp với B0, ≤2 CU trong trần Phase 2. Phase 4 phải nêu và đo khác biệt H2 vs Xie-SGC. Tổng 71 requirement v1.
 - [Roadmap]: Sửa số liệu Coverage trong REQUIREMENTS.md — file có 59 requirement v1 có ID cụ thể, không phải 52 như dòng tổng ghi lúc định nghĩa requirements.
 
 ### Pending Todos
@@ -95,6 +96,7 @@ None yet.
 | 3 | Thêm cell pull cố định vào notebook Colab | 2026-09-27 | db097b4 | — |
 | 4 | Bước 7–10: run dir mới mỗi lần, ThroughputMonitor, CU đo thật vào closeout | 2026-10-04 | — | — |
 | 261006-hxn | Eval Phase 2: CompressAI tự hồi quy dùng rate ước lượng, chấm từng điểm ngay khi nén, Bước 11 tự ngắt runtime | 2026-10-06 | 4288862 | [261006-hxn-fix-phase2-eval-step7-compressai](./quick/261006-hxn-fix-phase2-eval-step7-compressai/) |
+| 261007-l4e | Thêm baseline tái hiện Xie-SGC (Xie et al. 2025) vào kế hoạch: EVAL-17, Plan 02-07, ANLS-09 đã chốt, ghi chú H2 vs Xie-SGC ở Phase 4 | 2026-10-07 | 3c2fdb2 | [261007-l4e-add-xie-sgc-baseline-to-plan](./quick/261007-l4e-add-xie-sgc-baseline-to-plan/) |
 
 ## Deferred Items
 
