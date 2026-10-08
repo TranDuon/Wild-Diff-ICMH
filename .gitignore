@@ -13,3 +13,6 @@ checkpoints
 # local caches
 __pycache__/
 .pytest_cache/
+
+# Local copies of the Drive results registry (per-image rows, ~7 MB)
+tmp/*.jsonl

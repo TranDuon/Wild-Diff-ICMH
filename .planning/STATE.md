@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 2 (Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline) — EXECUTING
-Plan: 6/6 code complete (05/10); chờ chạy `Wild_Diff_ICMH_Phase2_Eval.ipynb` trên Colab (kế hoạch: `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
+Plan: 6/6 code complete (05/10); notebook Eval đã chạy 06/10 — kết quả B0 + baseline trên 202 ảnh dev ở `.planning/phases/02-mo-rong-corpus-eval-baseline/02-RESULTS.md` (kế hoạch: `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
 Status: Phase 1 hoàn thành 04/10/2026 (14/14, closeout thật trên L4). Còn 73,00 CU.
 Nhánh: `phase2` (đổi tên từ `ver2` ngày 05/10) chứa bằng chứng Phase 1 và toàn bộ Phase 2; chưa merge vào `main`. Hai notebook trên nhánh này clone `phase2`; khi merge phải đổi `BRANCH` về `main`.
-Last activity: 2026-10-08 - Completed quick task 261008-fvj: bỏ baseline tái hiện Xie-SGC; chỉ đối chiếu số liệu công bố
+Last activity: 2026-10-08 - Completed quick task 261008-inp: đưa kết quả Phase 2 (bảng, CSV, đồ thị RD) vào repo
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -100,6 +100,7 @@ None yet.
 | 261007-l4e | Thêm baseline tái hiện Xie-SGC (Xie et al. 2025) vào kế hoạch: EVAL-17, Plan 02-07, ANLS-09 đã chốt, ghi chú H2 vs Xie-SGC ở Phase 4 | 2026-10-07 | 3c2fdb2 | [261007-l4e-add-xie-sgc-baseline-to-plan](./quick/261007-l4e-add-xie-sgc-baseline-to-plan/) |
 | 261007-lm6 | Chuyển Xie-SGC (EVAL-17) từ Plan 02-07 sang đầu Phase 3 (spec `phases/03-…/XIE-SGC-SPEC.md`) | 2026-10-07 | — | [261007-lm6-move-xie-sgc-plan-to-phase3](./quick/261007-lm6-move-xie-sgc-plan-to-phase3/) |
 | 261008-fvj | Bỏ baseline tái hiện Xie-SGC; chỉ đối chiếu số liệu công bố của bài Xie với ghi chú khác giao thức | 2026-10-08 | e1fbe92 | [261008-fvj-b-baseline-t-i-hi-n-xie-sgc-ch-i-chi-u-s](./quick/261008-fvj-b-baseline-t-i-hi-n-xie-sgc-ch-i-chi-u-s/) |
+| 261008-inp | Đưa kết quả Phase 2 vào repo: `tools/summarize_phase2.py`, `02-RESULTS.md`, `results/` (CSV, bảng, RD) | 2026-10-08 | — | [261008-inp-phase2-results-summary](./quick/261008-inp-phase2-results-summary/) |
 
 ## Deferred Items
 
