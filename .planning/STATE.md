@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: H1 — Fine-tuning thích ứng miền
 status: planning
-stopped_at: Phase 2 complete, ready to plan Phase 3
+stopped_at: Phase 3 H1 pilot notebook ready, pending Colab GPU verification
 last_updated: "2026-10-08T06:49:51.823Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 2 complete, transitioned to Phase 3
-state_head: 64d4a04788b75fa3a4c7cf6142e70042a4266f78
+last_activity_desc: Phase 3 H1 pilot notebook implemented and CPU-tested; GPU experiment pending
+state_head: 6c04451
 progress:
   total_phases: 6
   completed_phases: 2
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 3 — H1 — Fine-tuning thích ứng miền
-Plan: Not started
-Status: Ready to plan
+Plan: H1 pilot notebook implemented via quick task 261008-m6w; full Phase 3 experimental completion pending
+Status: Ready for Colab L4 pilot (not Phase 3 complete)
 Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Các notebook hiện vẫn đặt `BRANCH = 'phase2'` — `origin/phase2` đang chậm hơn `main`; notebook Phase 3 phải clone `main` (hoặc fast-forward `phase2`).
-Last activity: 2026-10-08 — Phase 2 complete, transitioned to Phase 3
+Last activity: 2026-10-08 — Completed quick task 261008-m6w: standalone pooled H1 notebook, pilot500/dev30; 175 tests passed, GPU run pending
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -106,6 +106,7 @@ None yet.
 | 261008-fvj | Bỏ baseline tái hiện Xie-SGC; chỉ đối chiếu số liệu công bố của bài Xie với ghi chú khác giao thức | 2026-10-08 | e1fbe92 | [261008-fvj-b-baseline-t-i-hi-n-xie-sgc-ch-i-chi-u-s](./quick/261008-fvj-b-baseline-t-i-hi-n-xie-sgc-ch-i-chi-u-s/) |
 | 261008-inp | Đưa kết quả Phase 2 vào repo: `tools/summarize_phase2.py`, `02-RESULTS.md`, `results/` (CSV, bảng, RD) | 2026-10-08 | — | [261008-inp-phase2-results-summary](./quick/261008-inp-phase2-results-summary/) |
 | 261008-j6m | Đóng Phase 2: dời INFRA-02 → Phase 4, EVAL-04 → Phase 6; `02-SUMMARY.md`, `02-VERIFICATION.md`, UAT 5/5 | 2026-10-08 | — | [261008-j6m-defer-infra02-eval04-close-phase2](./quick/261008-j6m-defer-infra02-eval04-close-phase2/) |
+| 261008-m6w | Notebook Phase3 H1 pooled λ2 pilot500, dev30, pull cố định, resume/snapshot/cache; chưa confirm GPU | 2026-10-08 | 6c04451 | [261008-m6w-build-resource-efficient-phase3-h1-noteb](./quick/261008-m6w-build-resource-efficient-phase3-h1-noteb/) |
 
 ## Deferred Items
 
@@ -118,5 +119,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-09-27T16:06:57.418Z
-Stopped at: Phase 2 complete, ready to plan Phase 3
-Resume file: .planning/phases/01-khung-x-ng-end-to-end-t-i-thi-u-v-l-i-ch-n/01-CONTEXT.md
+Stopped at: Phase 3 H1 pilot notebook ready, waiting for Colab GPU pilot and dev30 results
+Resume file: .planning/quick/261008-m6w-build-resource-efficient-phase3-h1-noteb/261008-m6w-SUMMARY.md
