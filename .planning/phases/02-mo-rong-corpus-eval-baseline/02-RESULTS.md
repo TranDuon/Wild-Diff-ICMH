@@ -32,6 +32,26 @@ python tools/summarize_phase2.py --registry tmp/results.jsonl --out .planning/ph
 - **Khoảng tin cậy 95%:** bootstrap theo cụm site, 200 lần lấy mẫu lại.
 - `mbt2018` và `cheng2020-attn` dùng **bitrate ước lượng** từ likelihood (EVAL-14); các đường khác là mã hoá thật.
 
+## Thống kê miền (toàn corpus, `phase2/domain_stats.json`)
+
+MegaDetector trên ảnh gốc, ngưỡng 0,2 (pseudo-label, không phải nhãn người).
+
+| Chỉ số | Giá trị |
+|---|---|
+| Số ảnh / có bản ghi MegaDetector | 10.222 / 10.222 |
+| Ảnh rỗng theo nhãn người | 77,1% |
+| Ảnh MegaDetector thấy con vật | 2.978 (29,1%) — nhiều hơn số ảnh có con vật theo nhãn người (22,9%) |
+| Ảnh đêm (nguồn sáng, EXIF Flash) | 238 (2,3%) |
+| Số bbox con vật | 3.983 |
+| Cỡ bbox theo COCO trên ảnh gốc: large / medium / small | 3.495 / 461 / 27 |
+| Cỡ bbox theo COCO ở cạnh dài 1024: large / medium / small | 2.205 / 1.407 / 371 |
+| Bbox chiếm < 1% khung hình | 1.594 (40%) |
+| Độ phủ ROI mask trung bình | 4,5% khung hình; 7.244 ảnh không có mask |
+
+Hệ quả: trên ảnh gốc gần như không có bbox "small", nên `AP_small` trống ở bảng dưới; nhưng 40% con vật chiếm
+dưới 1% khung hình, nên sau khi thu nhỏ để nén chúng thành nhỏ (371 bbox small ở cạnh 1024). Split train/val/test
+có tỉ lệ rỗng (77,3% / 77,2% / 76,2%) và độ phủ mask (4,4% / 4,0% / 5,3%) gần nhau.
+
 ## Bảng chính: các điểm quanh dải bpp của B0 (toàn bộ ảnh, n = 202)
 
 | Phương pháp | bpp | PSNR | LPIPS ↓ | mAP [CI 95%] | Mất con vật | Con vật "ảo" |
