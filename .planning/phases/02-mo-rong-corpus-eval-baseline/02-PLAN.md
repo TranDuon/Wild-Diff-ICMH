@@ -64,9 +64,6 @@ Chia ra **code ở máy local (0 CU)** trước, rồi **một notebook Colab Ph
   chép corpus → MD toàn corpus → tag 20 site → đo thời gian giải mã 1024 vs 512 trên 5 ảnh →
   decode B0 trên dev ở các λ có sẵn → CompressAI zoo → evaluate → đồ thị RD chung.
 
-### ~~Plan 02-07~~ — chuyển sang đầu Phase 3 (07/10)
-Baseline tái hiện Xie-SGC (EVAL-17) không còn thuộc Phase 2. Spec đầy đủ: `.planning/phases/03-h1-fine-tuning-th-ch-ng-mi-n/XIE-SGC-SPEC.md` (plan 03-01 dự kiến).
-
 **Thứ tự:** 02-01 → 02-02 → 02-03 có thể làm ngay ở máy local (0 CU). 02-04 JPEG/WebP chạy được
 local. 02-05 và 02-06 cần Colab GPU, gộp vào **1–2 phiên Colab** sau khi Phase 1 đóng (đã có số đo
 throughput thật từ `ver2`).

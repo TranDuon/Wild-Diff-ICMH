@@ -10,10 +10,10 @@
 - **Tiến độ:** hôm nay là tuần 5/~10 (hạn chót ~16/11/2026); dự án chậm khoảng 1–2 tuần so với lịch theo tuần ngày 16/09 (H1 lẽ ra bắt đầu 07/10).
 - **Bài so sánh ngoài chưa chốt** (bài Xie 2025 là workshop, ít thông tin). Vì vậy từ 04/10 dự án theo nguyên tắc **"đánh giá độc lập với bài so sánh"**: train và giải mã một lần, lưu lại tất cả, chọn bài so sánh sau mà không train lại (ANLS-09).
 
-## Cập nhật 07/10/2026
+## Cập nhật 08/10/2026
 
-- **Bài so sánh ngoài đã chốt: Xie et al. 2025** (*Saliency-guided deployment-adaptive compression for wildlife camera traps*, CCAI@NeurIPS 2025, cùng Snapshot Kgalagadi). Bài không công bố code hay split nên dự án **tự tái hiện** thành baseline **Xie-SGC** ở **đầu Phase 3** (EVAL-17, plan 03-01 dự kiến; ban đầu là Plan 02-07, chuyển cùng ngày để Phase 2 đóng không phải chờ): fine-tune encoder Ballé hyperprior riêng từng site với MSE trọng số theo bbox MegaDetector (1 : 0,001), chấm trên `BASELINE_DEV` so cặp với B0. Đây là lượt train duy nhất được thêm vì bài so sánh (≤2 CU, Ballé nhỏ); nguyên tắc "không train lại" vẫn áp cho mọi model Diff-ICMH. Đối chứng Xie-FT (không SGC) làm nếu còn CU.
-- **Hệ quả cho H2 (Phase 4):** SGC của Xie về bản chất là ROI-weighted loss theo bbox MegaDetector, cùng ý tưởng với H2. Câu hỏi phản biện "H2 khác gì Xie?" phải trả lời được bằng số liệu, xem ghi chú ở Phase 4.
+- **Bài so sánh ngoài đã chốt: Xie et al. 2025** (*Saliency-guided deployment-adaptive compression for wildlife camera traps*, CCAI@NeurIPS 2025, cùng Snapshot Kgalagadi). Dự án chỉ dùng **số liệu đã công bố** để đối chiếu trong phần Related Work/Discussion; không tự tái hiện code, không fine-tune Ballé và không chạy Xie-SGC/Xie-FT. Vì bài không công bố code/split, các số của hai bên được đặt trong bảng literature comparison có ghi rõ khác giao thức, không dùng để tuyên bố thắng trực tiếp.
+- **Hệ quả cho H2 (Phase 4):** vẫn phải giải thích rõ điểm giống và khác về ý tưởng ưu tiên vùng động vật, nhưng bằng chứng thực nghiệm chịu lực của H2 là phép so sánh cùng giao thức với H1-control và B0/H1; bài Xie chỉ cung cấp bối cảnh ngoài.
 
 ### Quyết định đã chốt ngày 04/10/2026 (theo hướng tổng quát)
 
@@ -23,13 +23,13 @@
 | G-2 | **Đo end-to-end ở độ phân giải gốc**; độ phân giải xử lý bên trong là tham số (mặc định cạnh dài 1024) chọn trên tập dev; train crop từ ảnh ở cùng tỉ lệ đó | Từ ảnh gốc tính lại được mọi kiểu đánh giá; tránh hết VRAM (~26 GiB ở ảnh gốc); tránh lệch tỉ lệ con vật giữa train và test | EVAL-11, INFRA-01 |
 | G-3 | **Phủ rộng dải bitrate**: λ = 2, 8, 32 + núm chỉnh phía giải mã không tốn bit | Bài so sánh nào ở dải bitrate nào cũng có điểm chồng lên | ANLS-01, H1-06 |
 | G-4 | **Split và tập test giữ nguyên**; mọi lựa chọn siêu tham số làm trên tập dev lấy từ validation; test chạy một lần | Đổi split hay chọn trên test sẽ làm hỏng mọi kết quả | DATA-02, EVAL-16 |
-| G-5 | **Giải mã một lần, lưu hết** (bitstream, ảnh tái tạo gốc, thời gian); **đa chỉ số**; **baseline phổ quát** (JPEG, WebP, CompressAI zoo, B0, Xie-SGC tái hiện — thêm 07/10, VTM/BPG); **ghi đủ thông tin giao thức** mỗi dòng kết quả | Khi chốt bài so sánh chỉ cần tính lại chỉ số trên CPU và vẽ đồ thị | EVAL-12..15 |
+| G-5 | **Giải mã một lần, lưu hết** (bitstream, ảnh tái tạo gốc, thời gian); **đa chỉ số**; **baseline phổ quát** (JPEG, WebP, CompressAI zoo, B0, VTM/BPG); **ghi đủ thông tin giao thức** mỗi dòng kết quả | Có thể phân tích lại kết quả nội bộ mà không train/giải mã lại; bài Xie được đối chiếu riêng bằng số công bố | EVAL-12..15, ANLS-09 |
 
 ## Overview
 
 Dự án đi từ một codebase Diff-ICMH đã chạy được nhưng **chưa có một byte dữ liệu bẫy ảnh nào**, tới một báo cáo kỹ thuật chứng minh H2 (ROI-weighted loss) hoặc H3 (domain-aware Tag Guidance Module) đóng góp vượt trên fine-tuning thuần (H1). Vì ngân sách compute thật (~50h L4-equivalent trên Colab Pro) nhỏ hơn giả định kế hoạch gốc 5-6 lần, roadmap này áp dụng **MVP theo chiều dọc (vertical slice)**: Phase 1 không xây "toàn bộ tầng dữ liệu rồi toàn bộ hạ tầng rồi mới thí nghiệm", mà chứng minh **một lát cắt mỏng chạy được đầu-cuối** — một tập ảnh mẫu nhỏ đi từ tải về, qua split an toàn theo site, qua một lượt train ngắn, tới decode và ghi một dòng `results.jsonl` — trước khi tiêu bất kỳ giờ GPU nghiêm túc nào. Các phase sau đó **mở rộng** lát cắt này về chiều rộng (toàn bộ 10.222 ảnh Kgalagadi, harness eval đầy đủ) rồi chiều sâu (H1 → H2 → H3), tận dụng việc H3 tầng L1/L2 **không cần training** để chạy song song với các phase tốn GPU thay vì xếp hàng sau chúng. Hai rủi ro có thể làm dừng dự án — rò rỉ dữ liệu theo site/burst và cạn ngân sách compute-unit giữa chừng — được gắn thành cổng chặn cứng (hard gate) ngay từ Phase 1, không phải điều khoản ghi chú.
 
-**Lưu ý về số lượng requirement:** `REQUIREMENTS.md` liệt kê **59 requirement v1** có ID cụ thể (không phải 52 như dòng tổng ghi ban đầu trong file — con số 52 là lỗi đếm từ bước định nghĩa requirements trước đó). Roadmap này map đủ cả 59, và dòng Coverage trong `REQUIREMENTS.md` đã được sửa lại cho khớp.
+**Lưu ý về số lượng requirement:** `REQUIREMENTS.md` hiện liệt kê và map đủ **70 requirement v1** có ID cụ thể. Con số 59 là bộ requirement trước cập nhật 04/10; yêu cầu tái hiện bài Xie đã được bỏ ngày 08/10 và không nằm trong tổng này.
 
 ## Phases
 
@@ -100,7 +100,7 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
 **Mode:** mvp
 **Depends on**: Phase 1
 **Requirements**: DATA-01, DATA-04, DATA-06, DATA-07, INFRA-01, INFRA-02, EVAL-02, EVAL-03, EVAL-04, EVAL-05, EVAL-06, EVAL-07, EVAL-09, EVAL-10, EVAL-11, EVAL-12, EVAL-13, EVAL-14, EVAL-15, EVAL-16
-**Compute budget**: ≤10 CU gốc, đề xuất tạm ≤8 CU (~4,5h L4) — chủ yếu inference-only (MegaDetector trên toàn corpus, decode B0 trên tập dev); không có training (Xie-SGC chuyển sang đầu Phase 3 ngày 07/10). JPEG/WebP/VTM chạy CPU; CompressAI zoo rất nhẹ. Tải/chuẩn hoá/đóng gói corpus không tốn compute unit (CPU + I/O), chỉ tốn thời gian và Drive storage.
+**Compute budget**: ≤10 CU gốc, đề xuất tạm ≤8 CU (~4,5h L4) — chủ yếu inference-only (MegaDetector trên toàn corpus, decode B0 trên tập dev); không có training. JPEG/WebP/VTM chạy CPU; CompressAI zoo rất nhẹ. Tải/chuẩn hoá/đóng gói corpus không tốn compute unit (CPU + I/O), chỉ tốn thời gian và Drive storage.
 **Success Criteria** (what must be TRUE):
   1. Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có người đã tải, chuẩn hoá, chia 70/15/15 theo sequence trong từng site và copy về đĩa local của session lúc khởi động — không đọc trực tiếp từng file nhỏ trên Drive; Serengeti chỉ dùng đánh giá bổ sung.
   2. Thống kê miền đo được trên corpus thật (tỉ lệ ảnh rỗng, tỉ lệ ngày RGB/đêm IR, phân bố diện tích bbox) và ROI mask sinh từ bbox **MegaDetector** (detector/ngưỡng cố định, pseudo-label — DATA-06) kèm histogram độ phủ mask cho tập train được xuất ra và hợp lý. File detections JSON phủ **mọi** ảnh (kể cả `detections: []`) vì preflight H2 chặn nếu thiếu.
@@ -118,9 +118,8 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
 **Goal**: Codec `E_c`/`D_c` + control module fine-tune trên dữ liệu bẫy ảnh từ checkpoint tác giả, SD 2.1 và RAM++ giữ đóng băng, sinh ra model đầu tiên có vùng bpp chồng lấn đủ với baseline để tính BD-rate, và bắt đầu viết Method/Setup của báo cáo từ giữa dự án.
 **Mode:** mvp
 **Depends on**: Phase 2
-**Requirements**: EVAL-17, H1-01, H1-02, H1-03, H1-04, H1-05, H1-06, REPT-02
-**Việc đầu phase (thêm 07/10):** plan 03-01 = baseline tái hiện **Xie-SGC** (EVAL-17), chuyển từ Plan 02-07. Spec đầy đủ: `.planning/phases/03-h1-fine-tuning-th-ch-ng-mi-n/XIE-SGC-SPEC.md`. Chỉ cần output Phase 2 (bbox MegaDetector, `BASELINE_DEV`), không phụ thuộc checkpoint H1, nên có thể chạy trước hoặc xen giữa các phiên train H1.
-**Compute budget**: ≤35 CU gốc, đề xuất tạm ≤28 CU (~16h L4) — khoản chi lớn nhất trong toàn dự án; chạy qua nhiều session Colab (mỗi session ≤~12h) nhờ resume đầy đủ trạng thái đã vá ở Phase 1. Trần này gồm cả Xie-SGC (≤2 CU, fine-tune encoder Ballé nhỏ cho 20 site × 3 mức q, pilot một site trước).
+**Requirements**: H1-01, H1-02, H1-03, H1-04, H1-05, H1-06, REPT-02
+**Compute budget**: ≤35 CU gốc, đề xuất tạm ≤28 CU (~16h L4) — toàn bộ dành cho H1 và dự phòng vận hành; chạy qua nhiều session Colab (mỗi session ≤~12h) nhờ resume đầy đủ trạng thái đã vá ở Phase 1. Không có lượt train nào dành cho bài Xie.
 **Hạ tầng đã có (24/09):** `configs/train_kgalagadi_colab.yaml` (bf16, accumulate 8), `tools/train_kgalagadi_sites.py` (chạy tuần tự theo site — chỉ dùng cho mở rộng per-site). Theo G-1, H1 chính là **một model chung** trên train split của cả 20 site, một model cho mỗi λ = 2/8/32 (thứ tự: một λ làm pilot rồi mới mở rộng). Số epoch/step định theo throughput đo ở Phase 1. Run root dùng `runs/h1_v2/` (checkpoint trong `runs/h1/` có entropy model khởi tạo ngẫu nhiên, không được resume).
 **Success Criteria** (what must be TRUE):
   1. Codec `E_c`/`D_c` + control module fine-tune xong trên dữ liệu bẫy ảnh, SD 2.1/RAM++ vẫn đóng băng (xác minh được bằng diff trọng số trước/sau).
@@ -130,7 +129,6 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   5. Bản nháp phần Method và Setup của báo cáo kỹ thuật tồn tại vào cuối phase này (giữa dự án), không hoãn tới phase cuối.
   6. Núm chỉnh phía giải mã (H1-06) đã quét trên tập dev cho checkpoint H1, cấu hình tốt nhất được cố định trước khi chạy test; ảnh tái tạo và chỉ số được lưu theo EVAL-12/13.
   7. Kiểm soát overfit của model chung (H1-05): checkpoint được chọn theo validation, đường loss train/val được log và không tách nhau bất thường; nếu tách, dừng sớm hoặc giảm LR thay vì train thêm.
-  8. (thêm 07/10) Baseline tái hiện Xie-SGC (EVAL-17) có ít nhất q = 1/2/3 trên `BASELINE_DEV` ở cạnh dài 512, mỗi ảnh nén bằng model của site nó, decoder đúng là decoder pretrained (kiểm bằng so trọng số), chấm đủ chỉ số EVAL-13 + MegaDetector trước/sau, và có đồ thị SSIM–compression ratio đặt cạnh JPEG, Ballé pretrained và B0.
 **Plans**: TBD
 **UI hint**: no
 
@@ -147,7 +145,7 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   3. `L_dist_roi` và `L_dist_bg` log tách biệt ngay từ run đầu tiên và hai đường tách nhau rõ rệt — bằng chứng mask thực sự vào loss chứ không phải no-op.
   4. Quét α có ít nhất một biến thể V1 (chỉ weight `L_dist`) và một biến thể V2 (weight cả `L_dist` và `L_sem`); tỉ lệ false positive trên ảnh rỗng được theo dõi riêng ở **từng giá trị α** để phát hiện sớm nghịch lý bỏ đói nền.
   5. H2 được so với **H1-control** (từ cùng checkpoint H1, cùng số optimizer step, seed, LR, loss đều), không chỉ so với H1 trước khi train thêm — để tách đóng góp của trọng số ROI khỏi việc train thêm.
-  6. (thêm 07/10) Khác biệt giữa H2 và Xie-SGC (EVAL-17) được phát biểu và đo được, không chỉ nêu bằng lời. Hai cơ chế cùng là ROI-weighted loss theo bbox MegaDetector; khác ở chỗ H2 áp lên codec sinh ảnh (decoder là SD 2.1 đóng băng, trọng số vào cả `L_dist` ở latent VAE và `L_sem` ở Encoder Layer 9), dùng một model chung thay vì model từng site, và được chấm bằng chỉ số máy (mAP, con vật bị mất/"ảo") chứ không chỉ SSIM. Cặp Xie-FT → Xie-SGC là bản sao H1-control → H2 trên codec cổ điển: so mức lợi của ROI-weighting ở hai loại codec trên cùng `BASELINE_DEV`.
+  6. Khác biệt giữa H2 và phương pháp SGC của Xie được giải thích trong Method/Discussion: cả hai ưu tiên vùng động vật, nhưng H2 áp dụng trong codec sinh ảnh và được kiểm chứng trực tiếp bằng H1-control trên cùng giao thức. Chỉ số công bố của Xie chỉ dùng làm bối cảnh tài liệu, không coi là đối chứng cùng tập.
 **Plans**: TBD
 **UI hint**: no
 
@@ -185,7 +183,7 @@ So sánh chính: **B2 với B1c** và **B3 với B1**, trên cùng ảnh, cùng 
   3. Trần vật lý của VAE chứng minh bằng lập luận Nyquist cộng thí nghiệm FFT trên ảnh gốc vs ảnh decode; anchor VTM/BPG chạy nền trên CPU không cạnh tranh compute unit với training; failure taxonomy có ví dụ ảnh kèm theo, không chỉ chọn ảnh đẹp; mọi figure sinh tự động từ `results.jsonl` qua `make_all_figures.py`.
   4. Báo cáo kỹ thuật hoàn chỉnh với Method, Setup, Experiments, Analysis và mục Limitations thực chất (trần VAE, rủi ro ảo giác, bản chất pseudo-GT của mask, sai lệch cố ý so với setup gốc); định vị tính mới cite đúng TLIC (DCC 2024) và arXiv:2604.01122 (Disney/ETH).
   5. Gói tái lập (env đã pin, `results.jsonl` cùng script sinh figure, manifest split, checkpoint chỉ chứa delta đã fine-tune, smoke test tối thiểu) và slide + notebook demo chạy được trên ít nhất 2 ảnh mẫu tồn tại.
-  6. Bài so sánh ngoài (ANLS-09, đã chốt 07/10: Xie et al. 2025) được đặt trên cùng đồ thị với B0–B4 và baseline phổ quát qua baseline tái hiện Xie-SGC (EVAL-17), theo cả chỉ số bài đó báo cáo (SSIM theo compression ratio) lẫn chỉ số máy, tính từ kho EVAL-12. Số công bố của bài chỉ là điểm tham khảo ghi rõ "không cùng tập". Ngoài lượt fine-tune Ballé của Xie-SGC ở đầu Phase 3, không có lượt train nào được thêm vì bài so sánh.
+  6. Bài so sánh ngoài (ANLS-09: Xie et al. 2025) có bảng literature comparison riêng: ghi nguyên số liệu bài công bố trên các trục tương thích như SSIM và compression ratio, đồng thời ghi dữ liệu/split/độ phân giải/giao thức của mỗi bên. Không trộn các điểm khác giao thức thành một đường RD, không tuyên bố thắng trực tiếp và không viết code hay thêm lượt train để tái hiện bài Xie.
 **Plans**: TBD
 **UI hint**: no
 
@@ -197,7 +195,7 @@ Tổng ngân sách Colab Pro cho cả dự án: **~100 compute units (~50h tươ
 |-------|----------|----------------|----------------|---------|
 | 1 | Smoke-test + kill/resume | ≤8 CU (~4.5h L4) | ≤2 CU cho phần còn lại | **Xong.** Phiên closeout đo thật 1,37 CU |
 | 2 | Inference-only (MegaDetector, baseline eval) | ≤10 CU (~6h L4) | ≤8 CU | Tải/chuẩn hoá corpus không tốn compute unit |
-| 3 | Training (Xie-SGC ở đầu phase + H1) | ≤35 CU (~20h L4) | ≤28 CU (Xie-SGC ≤2 CU trong đó) | Khoản chi lớn nhất, đa session, resume đầy đủ |
+| 3 | Training H1 | ≤35 CU (~20h L4) | ≤28 CU | Khoản chi lớn nhất, đa session, resume đầy đủ; không dành CU cho việc tái hiện bài Xie |
 | 4 | Training (H2 alpha sweep + H1-control) | ≤25 CU (~14.5h L4) | ≤20 CU | Tiếp nối từ checkpoint H1, không train lại từ đầu |
 | 5 | Decode-only (H3 L1/L2) | ≤5 CU (~3h L4) | ≤4 CU | Zero training — đòn bẩy ngân sách lớn nhất dự án |
 | 6 | Dự phòng tổng hợp | ≤12 CU (~7h L4) | ≤8 CU | Điểm bitrate/ô ablation còn thiếu, re-run nếu cần |
@@ -224,8 +222,8 @@ Giao diện giữa hai luồng là **hợp đồng thư mục** (file/schema c�
 |-------|-------------------------------|-------------------------------|
 | 1 | Split an toàn (DATA-02/03/05), schema `results.jsonl` (EVAL-01) | Vá dependency + resume + checkpoint (PRE-01..06), smoke-test (INFRA-03/04/05), eval ảnh decode (EVAL-08) |
 | 2 | Tải corpus, MegaDetector bbox → ROI mask, thống kê miền, eval harness (MegaDetector + SpeciesNet), tập dev, baseline phổ quát JPEG/WebP/CompressAI zoo/VTM, mở rộng evaluator + registry | Chế độ end-to-end ở độ phân giải gốc (EVAL-11), decode B0, log tỉ lệ crop chứa động vật + overlay mask (INFRA-02), config H1 model chung + tag cache 20 site |
-| liên tục | Tìm và kiểm tra bài so sánh ngoài (dữ liệu, chỉ số, code công khai) để chốt trước Phase 6 (ANLS-09) | — |
-| 3 | Vận hành eval harness theo dõi checkpoint H1 qua `STATUS.json`/poll nhẹ | Xie-SGC (EVAL-17) ở đầu phase, rồi chạy fine-tuning H1, theo dõi loss/forgetting |
+| liên tục | Duy trì bảng trích dẫn và số liệu công bố của bài Xie cho literature comparison (ANLS-09); không tái hiện code | — |
+| 3 | Vận hành eval harness theo dõi checkpoint H1 qua `STATUS.json`/poll nhẹ | Chạy fine-tuning H1, theo dõi loss/forgetting |
 | 4 | Đo false-positive theo từng α, dựng overlay mask kiểm tra bằng mắt | Chạy quét α (H2), theo dõi `L_dist_roi`/`L_dist_bg` |
 | **5 (song song với 3+4)** | **Có thể đảm nhận H3 hoàn toàn** — vocab, metadata, kiểm chứng IR — vì không cần GPU training | Không bị chặn: có thể hỗ trợ H3-08 (đổi prompt trên checkpoint) khi H1/H2 ra checkpoint mới |
 | 6 | Bảng ablation, bảng cái giá chuyên biệt hoá, figure tự động, anchor VTM/BPG (CPU) | Method/Setup (bắt đầu từ Phase 3), Limitations, reproducibility package |
@@ -267,5 +265,5 @@ Lịch tạm, cần cả hai thành viên xác nhận; trễ thì áp dụng th�
 | 13–27/10 | Phase 3: H1 theo phạm vi đã chốt; nháp Method/Setup |
 | 24/10–06/11 | Phase 4: H2 V1 + H1-control (+ V2 nếu còn ngân sách) |
 | 14/10–06/11 | Phase 5: H3 decode-only song song với Phase 3–4 |
-| trước 03/11 | Chốt bài so sánh ngoài với thầy (ANLS-09) |
+| trước 03/11 | Chốt bảng số liệu công bố và giới hạn so sánh với bài Xie cùng thầy (ANLS-09) |
 | 03–16/11 | Phase 6: chạy test một lần, RD curve, ablation, cái giá chuyên biệt hoá, đồ thị so với bài đã chốt, báo cáo, gói tái lập |
