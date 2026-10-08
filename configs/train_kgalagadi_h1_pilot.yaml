@@ -1,0 +1,38 @@
+base: train_kgalagadi_pooled.yaml
+
+# H1 adapts to the domain by pooled fine-tuning, NOT by ROI weighting.
+data:
+  params:
+    dataset_overrides:
+      processing_long_side: 512
+
+model:
+  params:
+    validation_mode: loss_only
+
+lightning:
+  trainer:
+    max_steps: 500
+    # Interval is dataloader batches (8 batches per optimizer step).
+    val_check_interval: 800
+    check_val_every_n_epoch: null
+    limit_val_batches: 2
+    enable_progress_bar: false
+  # Replace, do not append: no ImageLogger or LPIPS-monitored checkpoint.
+  callbacks:
+    - target: model.callbacks.TrainingProgressMonitor
+      params:
+        every_n_steps: 50
+    - target: model.callbacks.ThroughputMonitor
+      params:
+        warmup_batches: 8
+    - target: model.callbacks.CropStatsMonitor
+      params:
+        log_every_n_steps: 50
+    - target: model.callbacks.ModelCheckpoint
+      params:
+        every_n_train_steps: 100
+        save_top_k: 0
+        save_last: true
+        filename: step-{step:06d}
+        auto_insert_metric_name: false

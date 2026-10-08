@@ -22,7 +22,28 @@ __all__ = [
     "ImageLogger",
     "ThroughputMonitor",
     "CropStatsMonitor",
+    "TrainingProgressMonitor",
 ]
+
+
+class TrainingProgressMonitor(Callback):
+    """Sparse optimizer-step progress in the saved subprocess log, no sampling."""
+
+    def __init__(self, every_n_steps: int = 50) -> None:
+        super().__init__()
+        if every_n_steps <= 0:
+            raise ValueError("every_n_steps must be positive")
+        self.every_n_steps = int(every_n_steps)
+        self._last_printed = -1
+
+    @rank_zero_only
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        step = int(trainer.global_step)
+        if step > 0 and step != self._last_printed and step % self.every_n_steps == 0:
+            self._last_printed = step
+            objective = trainer.callback_metrics.get("T/optim_loss_step")
+            detail = f", objective={float(objective):.5f}" if objective is not None else ""
+            print(f"H1 training: optimizer step {step}/{trainer.max_steps}{detail}", flush=True)
 
 
 class CropStatsMonitor(Callback):

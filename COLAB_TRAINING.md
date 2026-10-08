@@ -1,5 +1,10 @@
 # Lưu ý vận hành Colab
 
+**Phase 3 H1 mới:** dùng `Wild_Diff_ICMH_Phase3_H1.ipynb` trên nhánh `main`.
+Thứ tự và giới hạn ngân sách tại [docs/PHASE3_H1_COLAB.md](docs/PHASE3_H1_COLAB.md).
+Pilot λ2/500 step, đánh giá dev30; mở rộng và full dev tắt mặc định.
+Cell2A pull cố định cập nhật script; không chạy lại Phase2 đã hoàn thành.
+
 Notebook:
 - `Wild_Diff_ICMH_Kgalagadi_Train.ipynb` — training (sinh từ `tools/build_colab_training_notebook.py`);
 - `Wild_Diff_ICMH_Phase2_Eval.ipynb` — Phase 2: nhãn ngày/đêm, tập dev, MegaDetector, B0, baseline,

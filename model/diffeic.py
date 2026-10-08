@@ -626,6 +626,7 @@ class DiffEIC(LatentDiffusion):
         roi_background_weight: float = 1.0,
         roi_semantic_enabled: bool = False,
         validation_sample_steps: int = 20,
+        validation_mode: str = "reconstruction",
         compact_checkpoint: bool = True,
         external_text_conditioning: bool = False,
         *args, 
@@ -643,6 +644,9 @@ class DiffEIC(LatentDiffusion):
         self.roi_background_weight = float(roi_background_weight)
         self.roi_semantic_enabled = roi_semantic_enabled
         self.validation_sample_steps = int(validation_sample_steps)
+        if validation_mode not in {"reconstruction", "loss_only"}:
+            raise ValueError("validation_mode must be reconstruction or loss_only")
+        self.validation_mode = validation_mode
         self.compact_checkpoint = compact_checkpoint
         self.external_text_conditioning = external_text_conditioning
         if self.roi_weight <= 0 or self.roi_background_weight <= 0:
@@ -678,7 +682,7 @@ class DiffEIC(LatentDiffusion):
         # Register metrics as child modules so Lightning moves LPIPS and the
         # other metric networks to the same device as the codec.
         self.metric_funcs = torch.nn.ModuleDict()
-        for _, opt in calculate_metrics.items(): 
+        for _, opt in (calculate_metrics.items() if validation_mode == "reconstruction" else []):
             mopt = opt.copy()
             name = mopt.pop('type', None)
             mopt.pop('better', None)
@@ -1186,6 +1190,13 @@ class DiffEIC(LatentDiffusion):
         
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
+        if self.validation_mode == "loss_only":
+            # Monitor the objective without a multi-step diffusion decode or
+            # image metric networks. Not a substitute for held-out evaluation.
+            loss, _ = self.shared_step(batch)
+            self.log("val/objective", loss, on_step=False, on_epoch=True,
+                     prog_bar=True, logger=True, batch_size=batch[self.first_stage_key].shape[0])
+            return loss
         out = []
         log, bpp = self.log_images(batch, sample_steps=self.validation_sample_steps, bs=1)
         out.append(bpp.cpu())
