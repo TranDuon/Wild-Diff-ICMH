@@ -3,7 +3,7 @@ status: complete
 phase: 02-mo-rong-corpus-eval-baseline
 source: [ROADMAP.md Phase 2 success criteria 1-7, 02-PLAN.md, 02-RESULTS.md (no *-SUMMARY.md in phase dir)]
 started: 2026-10-08T07:00:00Z
-updated: 2026-10-08T07:30:00Z
+updated: 2026-10-08T08:00:00Z
 ---
 
 ## Current Test
@@ -20,16 +20,6 @@ result: pass
 expected: Trên Drive có phase2/detections/originals.jsonl với một dòng cho mỗi ảnh trong 10.222 ảnh (kể cả ảnh không có con vật), và phase2/domain_stats.json cho tỉ lệ ảnh rỗng ~76%, tỉ lệ đêm vài phần trăm, có histogram diện tích bbox.
 result: pass
 
-### 3. Log tỉ lệ crop chứa con vật và ảnh overlay mask (INFRA-02)
-expected: Có ảnh overlay mask ROI chồng lên ảnh train để kiểm bằng mắt (mask nằm đúng chỗ con vật sau crop), và lượt train có log tỉ lệ crop chứa con vật (crop_stats.json).
-result: skipped
-reason: "Deferred follow-up: người dùng bỏ qua — chưa có code overlay mask; cần trước Phase 4 (H2)."
-
-### 4. Eval harness MegaDetector + SpeciesNet
-expected: B0 được chấm cả chỉ số phát hiện (mAP, mất con vật, con vật "ảo", tách ngày/đêm, có CI) và chỉ số định loài của SpeciesNet (accuracy 2 mức) trong env riêng.
-result: skipped
-reason: "Deferred follow-up: người dùng bỏ qua — chưa có SpeciesNet (EVAL-04); cần trước Phase 6, baseline phải decode lại."
-
 ### 5. Đo end-to-end ở độ phân giải gốc (EVAL-11)
 expected: Ảnh tái tạo của B0 trong phase2/archive/B0_ls512_ddim50/lambda_*/ có kích thước 2592×2000 như ảnh gốc, và bpp tính trên số pixel ảnh gốc.
 result: pass
@@ -44,16 +34,24 @@ result: pass
 
 ## Summary
 
-total: 7
+total: 5
 passed: 5
 issues: 0
 pending: 0
-skipped: 2
+skipped: 0
 blocked: 0
 
 ## Gaps
 
 [none yet]
+
+## Moved Out of Phase 2
+
+Ngày 08/10/2026, theo quyết định của người dùng, hai tiêu chí sau được dời khỏi Phase 2 (ROADMAP,
+REQUIREMENTS cập nhật cùng ngày) nên không còn là test của phase này. Ban đầu là test 3 và 4, người dùng bỏ qua.
+
+- Test 3 — *Log tỉ lệ crop chứa con vật và ảnh overlay mask* (INFRA-02) → **Phase 4**, trước lượt train H2 đầu tiên.
+- Test 4 — *Eval harness MegaDetector + SpeciesNet* (EVAL-04, phần SpeciesNet) → **Phase 6**, nên làm sớm song song Phase 3.
 
 ## Deferred Follow-Ups
 

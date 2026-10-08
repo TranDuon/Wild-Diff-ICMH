@@ -1,47 +1,47 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 2
-current_phase_name: Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline
-status: executing
-stopped_at: Phase 2 code complete; awaiting Colab run of Wild_Diff_ICMH_Phase2_Eval.ipynb
-last_updated: "2026-09-27T16:22:57.295Z"
-last_activity: 2026-09-27
-last_activity_desc: "Implemented Phase 1 metadata audit and Colab Bước 10 closeout; awaiting live artifact"
-state_head: 5afb7b2f63ef0ec06398867d71689de138d1ff83
+current_phase: 3
+current_phase_name: H1 — Fine-tuning thích ứng miền
+status: planning
+stopped_at: Phase 2 complete, ready to plan Phase 3
+last_updated: "2026-10-08T06:49:51.823Z"
+last_activity: 2026-10-08
+last_activity_desc: Phase 2 complete, transitioned to Phase 3
+state_head: 64d4a04788b75fa3a4c7cf6142e70042a4266f78
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 0
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
+  percent: 33
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-08)
+See: .planning/PROJECT.md (updated 2026-10-08)
 
 **Core value:** Chứng minh được rằng cơ chế chuyên biệt hoá (H2 ROI-weighted loss hoặc H3 domain-aware TGM) đóng góp vượt trên fine-tuning thuần (H1).
-**Current focus:** Phase 2 — Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline
+**Current focus:** Phase 3 — H1 — Fine-tuning thích ứng miền
 
 ## Current Position
 
-Phase: 2 (Mở rộng dữ liệu toàn corpus + hạ tầng eval + baseline) — EXECUTING
-Plan: 6/6 code complete (05/10); notebook Eval đã chạy 06/10 — kết quả B0 + baseline trên 202 ảnh dev ở `.planning/phases/02-mo-rong-corpus-eval-baseline/02-RESULTS.md` (kế hoạch: `.planning/phases/02-mo-rong-corpus-eval-baseline/02-PLAN.md`)
-Status: Phase 1 hoàn thành 04/10/2026 (14/14, closeout thật trên L4). Còn 73,00 CU.
-Nhánh: `phase2` (đổi tên từ `ver2` ngày 05/10) chứa bằng chứng Phase 1 và toàn bộ Phase 2; chưa merge vào `main`. Hai notebook trên nhánh này clone `phase2`; khi merge phải đổi `BRANCH` về `main`.
-Last activity: 2026-10-08 - Completed quick task 261008-inp: đưa kết quả Phase 2 (bảng, CSV, đồ thị RD) vào repo
+Phase: 3 — H1 — Fine-tuning thích ứng miền
+Plan: Not started
+Status: Ready to plan
+Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Các notebook hiện vẫn đặt `BRANCH = 'phase2'` — `origin/phase2` đang chậm hơn `main`; notebook Phase 3 phải clone `main` (hoặc fast-forward `phase2`).
+Last activity: 2026-10-08 — Phase 2 complete, transitioned to Phase 3
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 1
 - Average duration: - min
 - Total execution time: 0h
 
@@ -49,7 +49,7 @@ Progress: [██░░░░░░░░] 17%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 2 | 1 | - | - |
 
 **Recent Trend:**
 
@@ -75,6 +75,7 @@ Progress: [██░░░░░░░░] 17%
 - [2026-10-05]: Ngày/đêm định nghĩa theo **nguồn sáng** (đêm = camera tự chiếu sáng bằng flash hoặc IR), xác định từ chính file ảnh để dùng được cho mọi dataset: EXIF Flash → ảnh xám IR → độ cao mặt trời (chỉ khi có toạ độ) → độ sáng pixel. Kgalagadi dùng flash trắng ⇒ ảnh đêm là ảnh màu; nhãn theo giờ cũ sai 32/78 ảnh "đêm" ở mẫu 450 ảnh. H3-05/06/07/09 sửa theo `is_grayscale`.
 - [2026-10-07, **superseded 08/10**]: Từng dự kiến tự tái hiện Xie-SGC và chuyển việc đó từ Phase 2 sang đầu Phase 3. Quyết định này không còn hiệu lực; không triển khai EVAL-17 hay spec Xie-SGC.
 - [2026-10-08]: Chốt Xie et al. 2025 chỉ là **literature comparison** (ANLS-09): dùng số công bố với cảnh báo khác dữ liệu/split/giao thức; không viết lại code, không chạy Xie-SGC/Xie-FT, không thêm lượt train hay CU. Tổng trở lại 70 requirement v1.
+- [2026-10-08]: Phase 2 đóng (UAT 5/5, `02-VERIFICATION.md` passed). INFRA-02 (overlay mask) dời sang Phase 4, EVAL-04 (SpeciesNet) dời sang Phase 6 — nên làm sớm, song song Phase 3. Kết quả: `phases/02-*/02-RESULTS.md`; λ pilot H1 đề xuất = 2.
 - [Roadmap]: Sửa số liệu Coverage trong REQUIREMENTS.md — file có 59 requirement v1 có ID cụ thể, không phải 52 như dòng tổng ghi lúc định nghĩa requirements.
 
 ### Pending Todos
@@ -83,6 +84,9 @@ None yet.
 
 ### Blockers/Concerns
 
+- [Phase 2→4] INFRA-02: ảnh overlay mask phải có trước lượt train H2 đầu tiên.
+- [Phase 2→6] EVAL-04: chưa có SpeciesNet; baseline phải decode lại để chấm định loài.
+- [Phase 2] Tỉ lệ con vật "ảo" 52–85% của codec CompressAI ở bitrate thấp chưa kiểm bằng mắt / ở ngưỡng 0,5.
 - **Rủi ro sinh tử #1 — rò rỉ dữ liệu theo site/burst**: phải được chặn bằng gate `split_check.py` tự động (DATA-03) ngay từ Phase 1, không phải script chạy tay. Theo dõi tới khi Phase 1 verify xong.
   (260916-sxk: `tools/data/split_check.py` đã có và chạy trong build manifest + trước khi ghi .list; CHƯA được gọi tự động trong `train.py`/eval.)
 - **Rủi ro sinh tử #2 — cạn ngân sách compute-unit**: ngân sách trong ROADMAP.md là ước tính TRƯỚC đo lường; phải hiệu chỉnh lại bằng số đo thật ngay sau smoke-test Phase 1 (INFRA-03) và ở mọi ranh giới phase sau đó.
@@ -101,6 +105,7 @@ None yet.
 | 261007-lm6 | Chuyển Xie-SGC (EVAL-17) từ Plan 02-07 sang đầu Phase 3 (spec `phases/03-…/XIE-SGC-SPEC.md`) | 2026-10-07 | — | [261007-lm6-move-xie-sgc-plan-to-phase3](./quick/261007-lm6-move-xie-sgc-plan-to-phase3/) |
 | 261008-fvj | Bỏ baseline tái hiện Xie-SGC; chỉ đối chiếu số liệu công bố của bài Xie với ghi chú khác giao thức | 2026-10-08 | e1fbe92 | [261008-fvj-b-baseline-t-i-hi-n-xie-sgc-ch-i-chi-u-s](./quick/261008-fvj-b-baseline-t-i-hi-n-xie-sgc-ch-i-chi-u-s/) |
 | 261008-inp | Đưa kết quả Phase 2 vào repo: `tools/summarize_phase2.py`, `02-RESULTS.md`, `results/` (CSV, bảng, RD) | 2026-10-08 | — | [261008-inp-phase2-results-summary](./quick/261008-inp-phase2-results-summary/) |
+| 261008-j6m | Đóng Phase 2: dời INFRA-02 → Phase 4, EVAL-04 → Phase 6; `02-SUMMARY.md`, `02-VERIFICATION.md`, UAT 5/5 | 2026-10-08 | — | [261008-j6m-defer-infra02-eval04-close-phase2](./quick/261008-j6m-defer-infra02-eval04-close-phase2/) |
 
 ## Deferred Items
 
@@ -113,5 +118,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-09-27T16:06:57.418Z
-Stopped at: Phase 1 context gathered
+Stopped at: Phase 2 complete, ready to plan Phase 3
 Resume file: .planning/phases/01-khung-x-ng-end-to-end-t-i-thi-u-v-l-i-ch-n/01-CONTEXT.md

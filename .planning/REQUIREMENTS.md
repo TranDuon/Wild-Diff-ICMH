@@ -18,17 +18,17 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 
 ### Data — Nền tảng dữ liệu bẫy ảnh
 
-- [ ] **DATA-01**: Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có nhãn người được tải và chuẩn hoá; Snapshot Serengeti chỉ dùng đánh giá bổ sung
+- [x] **DATA-01**: Toàn bộ 10.222 ảnh Snapshot Kgalagadi không có nhãn người được tải và chuẩn hoá; Snapshot Serengeti chỉ dùng đánh giá bổ sung
 - [ ] **DATA-02**: Mỗi site Kgalagadi được chia train/val/test 70/15/15 theo **sequence/burst**, không phải theo ảnh. Split đã đóng băng (`kgalagadi_site_split.jsonl` + SHA-256) và không đổi trong suốt dự án. (Từ 04/10: H1 chính là một model chung cho mọi site — xem H1-05; model riêng từng site chỉ là mở rộng tuỳ chọn)
 - [ ] **DATA-03**: `split_check.py` assert không có sequence/burst nào xuất hiện ở hai split và **chạy tự động trước mọi job training/eval** đọc file split (site được phép xuất hiện ở cả ba split theo protocol per-site)
-- [ ] **DATA-04**: Thống kê miền đo được trên chính corpus của nhóm — tỉ lệ ảnh rỗng, tỉ lệ ngày/đêm theo **nguồn sáng** (`utils/illumination.py`, kèm số ảnh theo từng nguồn tín hiệu), phân bố diện tích bbox so với khung hình
+- [x] **DATA-04**: Thống kê miền đo được trên chính corpus của nhóm — tỉ lệ ảnh rỗng, tỉ lệ ngày/đêm theo **nguồn sáng** (`utils/illumination.py`, kèm số ảnh theo từng nguồn tín hiệu), phân bố diện tích bbox so với khung hình
 - [ ] **DATA-05**: Xác minh metadata `datetime` và `location` còn dùng được — kiểm tra EXIF trên 100 ảnh đầu, fallback sang trường JSON của LILA nếu EXIF bị strip
-- [ ] **DATA-06**: ROI mask Kgalagadi sinh từ bbox MegaDetector với detector/ngưỡng cố định, kèm histogram độ phủ mask; ghi rõ đây là pseudo-label
-- [ ] **DATA-07**: Corpus đóng gói dạng shard (tar/webdataset) và copy về đĩa local của session lúc khởi động, không đọc trực tiếp từng file nhỏ trên Drive
+- [x] **DATA-06**: ROI mask Kgalagadi sinh từ bbox MegaDetector với detector/ngưỡng cố định, kèm histogram độ phủ mask; ghi rõ đây là pseudo-label
+- [x] **DATA-07**: Corpus đóng gói dạng shard (tar/webdataset) và copy về đĩa local của session lúc khởi động, không đọc trực tiếp từng file nhỏ trên Drive
 
 ### Infra — Hạ tầng training và quản lý ngân sách compute
 
-- [ ] **INFRA-01**: `CameraTrapDataset` (`dataset/camera_trap_dataset.py`) trả về ảnh và ROI mask **crop khớp nhau tuyệt đối** — ảnh và mask cùng một phép resize/crop/lật, không crop hai lần độc lập; crop lấy từ ảnh đã đưa về đúng độ phân giải xử lý của EVAL-11
+- [x] **INFRA-01**: `CameraTrapDataset` (`dataset/camera_trap_dataset.py`) trả về ảnh và ROI mask **crop khớp nhau tuyệt đối** — ảnh và mask cùng một phép resize/crop/lật, không crop hai lần độc lập; crop lấy từ ảnh đã đưa về đúng độ phân giải xử lý của EVAL-11
 - [ ] **INFRA-02**: Lấy mẫu crop có định hướng theo bbox với tỉ lệ cấu hình được, và tỉ lệ crop thực sự chứa động vật được log ra mỗi run
 - [ ] **INFRA-03**: Throughput và mức đốt compute unit **đo thật** bằng smoke-test ~2K iterations, dùng để hiệu chỉnh lại ngân sách của mọi phase còn lại
 - [ ] **INFRA-04**: Ngân sách compute unit được theo dõi liên tục trong `results.jsonl` và đối chiếu lại ở mỗi ranh giới phase, vì tier GPU Colab được cấp không xác định trước
@@ -37,26 +37,26 @@ Requirements cho milestone đầu (nghiệm thu đề tài). Mỗi requirement m
 ### Eval — Harness đánh giá và nguồn chân lý số liệu
 
 - [ ] **EVAL-01**: `results.jsonl` là nguồn chân lý duy nhất, schema cố định gồm `exp_id, dataset, lambda_rate, illumination, ddim_steps, metric, value, n_images, cu_estimate, git_commit, date`
-- [ ] **EVAL-02**: Eval harness chạy MegaDetector V6 và SpeciesNet trong **conda env cô lập**, giao tiếp qua JSON trên đĩa, không import chung
-- [ ] **EVAL-03**: Detection mAP báo cáo **tách theo AP_small / AP_medium / AP_large**, không chỉ mAP tổng
+- [x] **EVAL-02**: Eval harness chạy MegaDetector V6 và SpeciesNet trong **conda env cô lập**, giao tiếp qua JSON trên đĩa, không import chung *(08/10: phần MegaDetector xong ở Phase 2; env SpeciesNet làm cùng EVAL-04 ở Phase 6)*
+- [x] **EVAL-03**: Detection mAP báo cáo **tách theo AP_small / AP_medium / AP_large**, không chỉ mAP tổng
 - [ ] **EVAL-04**: Species accuracy báo cáo ở **cả mức loài và mức nhóm/taxonomic fallback**
-- [ ] **EVAL-05**: Mọi metric chính báo cáo **tách ngày / đêm**, không bao giờ gộp. Đêm = ảnh do camera tự chiếu sáng (flash trắng hoặc đèn IR), xác định từ chính file ảnh theo thứ tự EXIF Flash → ảnh xám IR → độ cao mặt trời (chỉ khi dataset có toạ độ) → độ sáng pixel; không dùng giờ chụp (sửa 05/10/2026)
-- [ ] **EVAL-06**: Tỉ lệ false positive trên ảnh rỗng được theo dõi như metric hạng nhất, dẫn xuất từ cùng một lượt inference MegaDetector đã chạy cho mAP
-- [ ] **EVAL-07**: Tỉ lệ ảo giác trên ảnh rỗng — đo tần suất decoder sinh ra động vật không có trong ảnh gốc
+- [x] **EVAL-05**: Mọi metric chính báo cáo **tách ngày / đêm**, không bao giờ gộp. Đêm = ảnh do camera tự chiếu sáng (flash trắng hoặc đèn IR), xác định từ chính file ảnh theo thứ tự EXIF Flash → ảnh xám IR → độ cao mặt trời (chỉ khi dataset có toạ độ) → độ sáng pixel; không dùng giờ chụp (sửa 05/10/2026)
+- [x] **EVAL-06**: Tỉ lệ false positive trên ảnh rỗng được theo dõi như metric hạng nhất, dẫn xuất từ cùng một lượt inference MegaDetector đã chạy cho mAP
+- [x] **EVAL-07**: Tỉ lệ ảo giác trên ảnh rỗng — đo tần suất decoder sinh ra động vật không có trong ảnh gốc
 - [ ] **EVAL-08**: Metric chất lượng ảnh qua `pyiqa` — PSNR, MS-SSIM, LPIPS, DISTS, FID
-- [ ] **EVAL-09**: Bootstrap confidence interval tính cho **mọi con số headline**, không chỉ bảng AP của H2
-- [ ] **EVAL-10**: Baseline Diff-ICMH gốc (checkpoint tác giả, chưa fine-tune) được chấm điểm trên miền bẫy ảnh — đây là hàng đối chứng chịu lực của toàn bộ bảng ablation
+- [x] **EVAL-09**: Bootstrap confidence interval tính cho **mọi con số headline**, không chỉ bảng AP của H2
+- [x] **EVAL-10**: Baseline Diff-ICMH gốc (checkpoint tác giả, chưa fine-tune) được chấm điểm trên miền bẫy ảnh — đây là hàng đối chứng chịu lực của toàn bộ bảng ablation
 
 ### Eval-G — Đánh giá độc lập với bài so sánh (thêm 04/10/2026)
 
 Mục tiêu: một bộ checkpoint và **một lần giải mã** dùng được cho bất kỳ bài so sánh nào được chốt sau, không phải train hay giải mã lại.
 
-- [ ] **EVAL-11**: Giao thức đo **end-to-end ở độ phân giải gốc**: đầu vào là ảnh gốc (2592×2000), đầu ra là ảnh cùng kích thước, mọi chỉ số tính so với ảnh gốc. Độ phân giải xử lý bên trong (thu nhỏ trước khi nén, phóng to sau khi giải mã) là tham số chọn trên tập dev, mặc định cạnh dài 1024. Crop 256 ở giữa ảnh chỉ dùng cho smoke test, không dùng cho số báo cáo
-- [ ] **EVAL-12**: Mọi lượt giải mã đều lưu trên Drive: bitstream, ảnh tái tạo ở độ phân giải gốc, thời gian encode/decode từng ảnh. Chỉ số mới được tính lại từ kho lưu trữ này, không giải mã lại
-- [ ] **EVAL-13**: Mỗi lượt đánh giá tính đủ bộ chỉ số: PSNR, SSIM, MS-SSIM, LPIPS, DISTS (FID khi đủ mẫu), SSIM foreground (bbox MegaDetector), byte/ảnh, bpp, compression ratio = 24·H·W / số bit (H, W của ảnh gốc), thời gian encode/decode, kích thước model; chỉ số tác vụ máy theo EVAL-02..07
-- [ ] **EVAL-14**: Baseline phổ quát chạy trên cùng tập và cùng giao thức EVAL-11: JPEG và WebP (CPU, quét chất lượng), các model pretrained của CompressAI (`bmshj2018-hyperprior`, `mbt2018`, `cheng2020-attn`, chỉ inference; hai model tự hồi quy `mbt2018`/`cheng2020-attn` dùng rate ước lượng từ likelihood — chế độ `--entropy-estimation` của CompressAI — vì entropy coder tuần tự tốn ~29 s/ảnh, ghi `rate` trong protocol), cùng với B0 (EVAL-10) và VTM/BPG (ANLS-06)
-- [ ] **EVAL-15**: Mỗi dòng `results.jsonl` ghi kèm thông tin giao thức: độ phân giải xử lý, độ phân giải đánh giá, thư viện + phiên bản SSIM, cách tính compression ratio, số bước DDIM, seed, định danh checkpoint (mở rộng schema EVAL-01, giữ tương thích ngược)
-- [ ] **EVAL-16**: Tập dev cố định lấy từ **validation** (vài trăm ảnh, phân tầng theo site, ngày/đêm, rỗng/có thú) dùng để chọn λ, núm giải mã, α, prompt và độ phân giải xử lý. Test split chỉ chạy một lần ở Phase 6
+- [x] **EVAL-11**: Giao thức đo **end-to-end ở độ phân giải gốc**: đầu vào là ảnh gốc (2592×2000), đầu ra là ảnh cùng kích thước, mọi chỉ số tính so với ảnh gốc. Độ phân giải xử lý bên trong (thu nhỏ trước khi nén, phóng to sau khi giải mã) là tham số chọn trên tập dev, mặc định cạnh dài 1024. Crop 256 ở giữa ảnh chỉ dùng cho smoke test, không dùng cho số báo cáo
+- [x] **EVAL-12**: Mọi lượt giải mã đều lưu trên Drive: bitstream, ảnh tái tạo ở độ phân giải gốc, thời gian encode/decode từng ảnh. Chỉ số mới được tính lại từ kho lưu trữ này, không giải mã lại
+- [x] **EVAL-13**: Mỗi lượt đánh giá tính đủ bộ chỉ số: PSNR, SSIM, MS-SSIM, LPIPS, DISTS (FID khi đủ mẫu), SSIM foreground (bbox MegaDetector), byte/ảnh, bpp, compression ratio = 24·H·W / số bit (H, W của ảnh gốc), thời gian encode/decode, kích thước model; chỉ số tác vụ máy theo EVAL-02..07
+- [x] **EVAL-14**: Baseline phổ quát chạy trên cùng tập và cùng giao thức EVAL-11: JPEG và WebP (CPU, quét chất lượng), các model pretrained của CompressAI (`bmshj2018-hyperprior`, `mbt2018`, `cheng2020-attn`, chỉ inference; hai model tự hồi quy `mbt2018`/`cheng2020-attn` dùng rate ước lượng từ likelihood — chế độ `--entropy-estimation` của CompressAI — vì entropy coder tuần tự tốn ~29 s/ảnh, ghi `rate` trong protocol), cùng với B0 (EVAL-10) và VTM/BPG (ANLS-06)
+- [x] **EVAL-15**: Mỗi dòng `results.jsonl` ghi kèm thông tin giao thức: độ phân giải xử lý, độ phân giải đánh giá, thư viện + phiên bản SSIM, cách tính compression ratio, số bước DDIM, seed, định danh checkpoint (mở rộng schema EVAL-01, giữ tương thích ngược)
+- [x] **EVAL-16**: Tập dev cố định lấy từ **validation** (vài trăm ảnh, phân tầng theo site, ngày/đêm, rỗng/có thú) dùng để chọn λ, núm giải mã, α, prompt và độ phân giải xử lý. Test split chỉ chạy một lần ở Phase 6
 
 ### H1 — Domain-adaptive fine-tuning
 
@@ -165,26 +165,26 @@ Phase nào phủ requirement nào. Cập nhật khi tạo roadmap.
 | INFRA-05 | Phase 1 | Pending |
 | EVAL-01 | Phase 1 | Pending |
 | EVAL-08 | Phase 1 | Pending |
-| DATA-01 | Phase 2 | Pending |
-| DATA-04 | Phase 2 | Pending |
-| DATA-06 | Phase 2 | Pending |
-| DATA-07 | Phase 2 | Pending |
-| INFRA-01 | Phase 2 | Pending |
-| INFRA-02 | Phase 2 | Pending |
-| EVAL-02 | Phase 2 | Pending |
-| EVAL-03 | Phase 2 | Pending |
-| EVAL-04 | Phase 2 | Pending |
-| EVAL-05 | Phase 2 | Pending |
-| EVAL-06 | Phase 2 | Pending |
-| EVAL-07 | Phase 2 | Pending |
-| EVAL-09 | Phase 2 | Pending |
-| EVAL-10 | Phase 2 | Pending |
-| EVAL-11 | Phase 2 | Pending |
-| EVAL-12 | Phase 2 | Pending |
-| EVAL-13 | Phase 2 | Pending |
-| EVAL-14 | Phase 2 | Pending |
-| EVAL-15 | Phase 2 | Pending |
-| EVAL-16 | Phase 2 | Pending |
+| DATA-01 | Phase 2 | Complete |
+| DATA-04 | Phase 2 | Complete |
+| DATA-06 | Phase 2 | Complete |
+| DATA-07 | Phase 2 | Complete |
+| INFRA-01 | Phase 2 | Complete |
+| INFRA-02 | Phase 4 | Pending |
+| EVAL-02 | Phase 2 | Complete |
+| EVAL-03 | Phase 2 | Complete |
+| EVAL-04 | Phase 6 | Pending |
+| EVAL-05 | Phase 2 | Complete |
+| EVAL-06 | Phase 2 | Complete |
+| EVAL-07 | Phase 2 | Complete |
+| EVAL-09 | Phase 2 | Complete |
+| EVAL-10 | Phase 2 | Complete |
+| EVAL-11 | Phase 2 | Complete |
+| EVAL-12 | Phase 2 | Complete |
+| EVAL-13 | Phase 2 | Complete |
+| EVAL-14 | Phase 2 | Complete |
+| EVAL-15 | Phase 2 | Complete |
+| EVAL-16 | Phase 2 | Complete |
 | H1-01 | Phase 3 | Pending |
 | H1-02 | Phase 3 | Pending |
 | H1-03 | Phase 3 | Pending |
@@ -223,6 +223,7 @@ Phase nào phủ requirement nào. Cập nhật khi tạo roadmap.
 | REPT-05 | Phase 6 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 70 total (59 ban đầu + 11 thêm ngày 04/10: EVAL-11..16, H1-05, H1-06, H3-09, H3-10, ANLS-09)
 - Mapped to phases: 70
 - Unmapped: 0 ✓
