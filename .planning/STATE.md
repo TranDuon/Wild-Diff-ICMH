@@ -2,12 +2,12 @@
 gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: H1 — Fine-tuning thích ứng miền
-status: planning
-stopped_at: Phase 3 H1 pilot notebook ready, pending Colab GPU verification
-last_updated: "2026-10-08T06:49:51.823Z"
-last_activity: 2026-10-08
-last_activity_desc: Phase 3 H1 pilot notebook implemented and CPU-tested; GPU experiment pending
-state_head: 6c04451
+status: executing
+stopped_at: H1 pilot500/862 and dev30 confirmed; session timer fix CPU-verified, live Colab resume pending
+last_updated: "2026-10-13T05:03:54Z"
+last_activity: 2026-10-13
+last_activity_desc: Fixed H1 per-session Timer and visible notebook logs; full Phase 3 experimental completion pending
+state_head: c05f6ad
 progress:
   total_phases: 6
   completed_phases: 2
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 Phase: 3 — H1 — Fine-tuning thích ứng miền
 Plan: H1 pilot notebook implemented via quick task 261008-m6w; full Phase 3 experimental completion pending
-Status: Ready for Colab L4 pilot (not Phase 3 complete)
+Status: Pilot500 and extension862/dev30 confirmed; per-session Timer fix CPU-verified, live resume pending (not Phase 3 complete)
 Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Các notebook hiện vẫn đặt `BRANCH = 'phase2'` — `origin/phase2` đang chậm hơn `main`; notebook Phase 3 phải clone `main` (hoặc fast-forward `phase2`).
-Last activity: 2026-10-08 — Completed quick task 261008-m6w: standalone pooled H1 notebook, pilot500/dev30; 175 tests passed, GPU run pending
+Last activity: 2026-10-13 — Completed quick task 261013-fzr: fresh H1 session Timer + streamed notebook logs; 191 CPU suite tests passed and real Lightning targeted suite 32/32; live Colab resume pending
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -107,6 +107,7 @@ None yet.
 | 261008-inp | Đưa kết quả Phase 2 vào repo: `tools/summarize_phase2.py`, `02-RESULTS.md`, `results/` (CSV, bảng, RD) | 2026-10-08 | — | [261008-inp-phase2-results-summary](./quick/261008-inp-phase2-results-summary/) |
 | 261008-j6m | Đóng Phase 2: dời INFRA-02 → Phase 4, EVAL-04 → Phase 6; `02-SUMMARY.md`, `02-VERIFICATION.md`, UAT 5/5 | 2026-10-08 | — | [261008-j6m-defer-infra02-eval04-close-phase2](./quick/261008-j6m-defer-infra02-eval04-close-phase2/) |
 | 261008-m6w | Notebook Phase3 H1 pooled λ2 pilot500, dev30, pull cố định, resume/snapshot/cache; chưa confirm GPU | 2026-10-08 | 6c04451 | [261008-m6w-build-resource-efficient-phase3-h1-noteb](./quick/261008-m6w-build-resource-efficient-phase3-h1-noteb/) |
+| 261013-fzr | Fix Timer mỗi phiên H1 resume, giữ trạng thái học; notebook stream log, 191 CPU tests +32 real-Lightning targeted tests; chưa chạy GPU bản sửa | 2026-10-13 | c05f6ad | [261013-fzr-fix-h1-resume-with-a-fresh-per-session-t](./quick/261013-fzr-fix-h1-resume-with-a-fresh-per-session-t/) |
 
 ## Deferred Items
 
@@ -118,6 +119,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-27T16:06:57.418Z
-Stopped at: Phase 3 H1 pilot notebook ready, waiting for Colab GPU pilot and dev30 results
-Resume file: .planning/quick/261008-m6w-build-resource-efficient-phase3-h1-noteb/261008-m6w-SUMMARY.md
+Last session: 2026-10-13T05:03:54Z
+Stopped at: H1500/862 quick results available; Timer/log fix verified locally, pending live Colab resume and model-selection review
+Resume file: .planning/quick/261013-fzr-fix-h1-resume-with-a-fresh-per-session-t/261013-fzr-SUMMARY.md
