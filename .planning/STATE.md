@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: H1 — Fine-tuning thích ứng miền
 status: executing
-stopped_at: H1 pilot500/862 and dev30 confirmed; session timer fix CPU-verified, live Colab resume pending
-last_updated: "2026-10-13T05:03:54Z"
+stopped_at: H1 reached1000 verified from Drive; cached dev30 reviewed; isolated 200-step low-LR notebook ready, live trial pending
+last_updated: "2026-10-13T07:25:12Z"
 last_activity: 2026-10-13
-last_activity_desc: Fixed H1 per-session Timer and visible notebook logs; full Phase 3 experimental completion pending
-state_head: c05f6ad
+last_activity_desc: Reviewed cached B0/H1 on identical dev30 and prepared consent-gated low-LR recovery; Phase 3 remains incomplete
+state_head: 687e660
 progress:
   total_phases: 6
   completed_phases: 2
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 Phase: 3 — H1 — Fine-tuning thích ứng miền
 Plan: H1 pilot notebook implemented via quick task 261008-m6w; full Phase 3 experimental completion pending
-Status: Pilot500 and extension862/dev30 confirmed; per-session Timer fix CPU-verified, live resume pending (not Phase 3 complete)
-Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Các notebook hiện vẫn đặt `BRANCH = 'phase2'` — `origin/phase2` đang chậm hơn `main`; notebook Phase 3 phải clone `main` (hoặc fast-forward `phase2`).
-Last activity: 2026-10-13 — Completed quick task 261013-fzr: fresh H1 session Timer + streamed notebook logs; 191 CPU suite tests passed and real Lightning targeted suite 32/32; live Colab resume pending
+Status: Pilot500/862/1000 quick results confirmed on Drive; same-dev30 B0/H1 review complete; new 200-step low-LR trial implemented but NOT run (not Phase 3 complete)
+Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Notebook Phase 3 và recovery clone/pull `main`; không dùng notebook legacy còn trỏ nhánh `phase2` để lấy bản sửa mới.
+Last activity: 2026-10-13 — Completed quick task 261013-i7u: verified cached rate-quality review, isolated low-LR 200-step helper and CPU-first notebook; 253 CPU tests passed, 2 skipped; live trial pending
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -76,6 +76,7 @@ Progress: [███░░░░░░░] 33%
 - [2026-10-07, **superseded 08/10**]: Từng dự kiến tự tái hiện Xie-SGC và chuyển việc đó từ Phase 2 sang đầu Phase 3. Quyết định này không còn hiệu lực; không triển khai EVAL-17 hay spec Xie-SGC.
 - [2026-10-08]: Chốt Xie et al. 2025 chỉ là **literature comparison** (ANLS-09): dùng số công bố với cảnh báo khác dữ liệu/split/giao thức; không viết lại code, không chạy Xie-SGC/Xie-FT, không thêm lượt train hay CU. Tổng trở lại 70 requirement v1.
 - [2026-10-08]: Phase 2 đóng (UAT 5/5, `02-VERIFICATION.md` passed). INFRA-02 (overlay mask) dời sang Phase 4, EVAL-04 (SpeciesNet) dời sang Phase 6 — nên làm sớm, song song Phase 3. Kết quả: `phases/02-*/02-RESULTS.md`; λ pilot H1 đề xuất = 2.
+- [2026-10-13]: Đã xác nhận H1 cũ tới 1.000 bước. Đối chiếu CPU B0 λ2/8/32 và H1 500/1000 trên đúng dev30 với protocol thực cho thấy đánh đổi dung lượng/chất lượng, không chứng minh fine-tuning thất bại toàn diện. Chuẩn bị một lượt thử mới từ trọng số tác giả λ2, optimizer mới, main LR1e-5/aux LR1e-3, tối đa 200 bước, đồng ý theo hash báo cáo; chưa chạy. Giữ nguyên run/config/ảnh cũ, không tự mở rộng hay train H2. Cặp H1/H2 tiếp theo phải cùng nguồn/LR/crop/số bước và chỉ khác ROI weighting.
 - [Roadmap]: Sửa số liệu Coverage trong REQUIREMENTS.md — file có 59 requirement v1 có ID cụ thể, không phải 52 như dòng tổng ghi lúc định nghĩa requirements.
 
 ### Pending Todos
@@ -84,6 +85,7 @@ None yet.
 
 ### Blockers/Concerns
 
+- [H1 recovery] 30 ảnh là tín hiệu chọn hướng, không chứng minh thắng đường cong nén hay bài workshop. Chưa kiểm ảnh bị mất phát hiện và log loss/LR cũ tại phiên audit này; chưa xác định LR là nguyên nhân. Lượt thử 200 bước cũng không phải đối chứng cùng số bước với checkpoint cũ 500/1000.
 - [Phase 2→4] INFRA-02: ảnh overlay mask phải có trước lượt train H2 đầu tiên.
 - [Phase 2→6] EVAL-04: chưa có SpeciesNet; baseline phải decode lại để chấm định loài.
 - [Phase 2] Tỉ lệ con vật "ảo" 52–85% của codec CompressAI ở bitrate thấp chưa kiểm bằng mắt / ở ngưỡng 0,5.
@@ -108,6 +110,7 @@ None yet.
 | 261008-j6m | Đóng Phase 2: dời INFRA-02 → Phase 4, EVAL-04 → Phase 6; `02-SUMMARY.md`, `02-VERIFICATION.md`, UAT 5/5 | 2026-10-08 | — | [261008-j6m-defer-infra02-eval04-close-phase2](./quick/261008-j6m-defer-infra02-eval04-close-phase2/) |
 | 261008-m6w | Notebook Phase3 H1 pooled λ2 pilot500, dev30, pull cố định, resume/snapshot/cache; chưa confirm GPU | 2026-10-08 | 6c04451 | [261008-m6w-build-resource-efficient-phase3-h1-noteb](./quick/261008-m6w-build-resource-efficient-phase3-h1-noteb/) |
 | 261013-fzr | Fix Timer mỗi phiên H1 resume, giữ trạng thái học; notebook stream log, 191 CPU tests +32 real-Lightning targeted tests; chưa chạy GPU bản sửa | 2026-10-13 | c05f6ad | [261013-fzr-fix-h1-resume-with-a-fresh-per-session-t](./quick/261013-fzr-fix-h1-resume-with-a-fresh-per-session-t/) |
+| 261013-i7u | Audit B0/H1 cùng dev30 từ cache Drive; notebook CPU-first + run low-LR 200 bước riêng, hash consent, loss CSV; 253 CPU tests passed, chưa chạy trial GPU | 2026-10-13 | 687e660 | [261013-i7u-audit-cached-h1-rate-quality-tradeoff-an](./quick/261013-i7u-audit-cached-h1-rate-quality-tradeoff-an/) |
 
 ## Deferred Items
 
@@ -119,6 +122,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T05:03:54Z
-Stopped at: H1500/862 quick results available; Timer/log fix verified locally, pending live Colab resume and model-selection review
-Resume file: .planning/quick/261013-fzr-fix-h1-resume-with-a-fresh-per-session-t/261013-fzr-SUMMARY.md
+Last session: 2026-10-13T07:25:12Z
+Stopped at: H1 reached1000; same-dev30 review verified; new recovery notebook ready, live low-LR trial and subsequent controlled H2 review pending
+Resume file: .planning/quick/261013-i7u-audit-cached-h1-rate-quality-tradeoff-an/261013-i7u-SUMMARY.md

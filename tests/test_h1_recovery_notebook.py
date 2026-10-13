@@ -152,4 +152,3 @@ def test_recovery_wrapper_streams_real_cpu_child_and_raises(tmp_path, capsys, re
     assert capsys.readouterr().out.endswith("review stdout\nreview stderr\n")
     assert "stdout=subprocess.PIPE" in source and "stderr=subprocess.STDOUT" in source
     assert "flush=True" in source
-
