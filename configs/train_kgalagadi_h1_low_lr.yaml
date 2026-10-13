@@ -1,0 +1,34 @@
+base: train_kgalagadi_h1_pilot.yaml
+
+# Separate 200-step hypothesis test, NOT an extension of the paid-for pilot.
+# The helper binds this config to author lambda-2 weights and a fresh optimizer.
+model:
+  resume_checkpoint: null
+  params:
+    learning_rate: 1.0e-5
+    aux_learning_rate: 1.0e-3
+
+lightning:
+  trainer:
+    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h1_low_lr_recovery_ls512/lambda_2}
+    max_steps: 200
+  callbacks:
+    - target: model.callbacks.TrainingProgressMonitor
+      params:
+        every_n_steps: 50
+    - target: model.callbacks.ThroughputMonitor
+      params:
+        warmup_batches: 8
+    - target: model.callbacks.CropStatsMonitor
+      params:
+        log_every_n_steps: 50
+    - target: utils.training_diagnostics.LossCSV
+      params:
+        every_n_steps: 10
+    - target: model.callbacks.ModelCheckpoint
+      params:
+        every_n_train_steps: 100
+        save_top_k: 0
+        save_last: true
+        filename: step-{step:06d}
+        auto_insert_metric_name: false
