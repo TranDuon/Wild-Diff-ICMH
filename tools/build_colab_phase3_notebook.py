@@ -44,7 +44,7 @@ cells = [
     drive.mount('/content/drive')
     CU_AVAILABLE_AT_START = None  # điền số Available trong bảng Tài nguyên
     CU_RATE = 1.54  # thay bằng tốc độ CU/giờ Colab đang báo; chỉ dùng để ước tính
-    SESSION_HOURS = 1.5  # giới hạn mỗi lần chạy training, có checkpoint cuối phiên
+    SESSION_HOURS = 1.5  # ngân sách training mới mỗi trainer.fit; chưa gồm chuẩn bị/staging
     """),
     markdown("## 2 — Lấy code nhánh main / xem GPU (mỗi runtime mới)"),
     reused("Bước 2 "),
@@ -70,10 +70,19 @@ cells = [
 
     def p3(action, *options):
         # Each call launches the currently pulled helper, not cached imports.
-        subprocess.run([
+        command = [
             sys.executable, '-u', 'tools/phase3_h1.py', action,
             '--drive-root', str(DRIVE_ROOT), '--cu-rate', str(CU_RATE), *map(str, options),
-        ], cwd=REPO, check=True)
+        ]
+        with subprocess.Popen(
+            command, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        ) as process:
+            for line in process.stdout:
+                print(line, end='', flush=True)
+            return_code = process.wait()
+            if return_code:
+                raise subprocess.CalledProcessError(return_code, command)
 
     p3('prepare')
     print('Run H1:', DRIVE_ROOT / 'runs/h1_pooled_pilot_ls512/lambda_2')
@@ -94,7 +103,9 @@ cells = [
     Không sinh ảnh trong training; validation chỉ tính loss trên 2 batch.
     Checkpoint rolling mỗi 100 optimizer steps, lưu đầy đủ trạng thái cuối phiên.
     Nếu runtime bị ngắt đột ngột, có thể mất phần sau checkpoint gần nhất.
-    Giới hạn mỗi phiên SESSION_HOURS; chưa đủ 500 thì chạy lại cell này.
+    Mỗi lần trainer.fit có ngân sách training mới SESSION_HOURS; thời gian chuẩn bị
+    và staging checkpoint chưa nằm trong giới hạn này. Chưa đủ 500 thì chạy lại
+    cell này: giữ mô hình, optimizer và số bước đã học, không train lại từ đầu.
     """),
     code("""
     p3('train', '--target-steps', 500, '--session-hours', SESSION_HOURS)

@@ -17,12 +17,15 @@ def notebook_builder():
     return importlib.import_module("build_colab_phase3_notebook")
 
 
-def launcher(exit_code=0):
+def p3_definition():
     """Extract only p3(), never execute preparation or touch Drive/GPU."""
     source = next(cell["source"] for cell in notebook_builder().build()["cells"]
                   if cell["cell_type"] == "code" and "def p3(" in cell["source"])
-    function = next(node for node in ast.parse(source).body
-                    if isinstance(node, ast.FunctionDef) and node.name == "p3")
+    return next(node for node in ast.parse(source).body
+                if isinstance(node, ast.FunctionDef) and node.name == "p3")
+
+
+def launcher(exit_code=0):
     events = []
     launches = []
 
@@ -61,7 +64,7 @@ def launcher(exit_code=0):
     namespace = {"subprocess": api, "sys": SimpleNamespace(executable="python"),
                  "DRIVE_ROOT": Path("/content/drive/MyDrive/wild_diff_icmh"),
                  "CU_RATE": 1.54, "REPO": repo, "print": output}
-    exec(compile(ast.Module(body=[function], type_ignores=[]), "notebook-p3", "exec"), namespace)
+    exec(compile(ast.Module(body=[p3_definition()], type_ignores=[]), "notebook-p3", "exec"), namespace)
     return namespace["p3"], events, launches, repo
 
 
@@ -89,6 +92,29 @@ def test_p3_streams_failure_details_and_preserves_nonzero_exit():
     assert [event[1] for event in events if event[0] == "print"] == [
         "stdout first\n", "stderr second\n"]
     assert events[-1] == ("wait", 7)
+
+
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_p3_real_cpu_child_streams_stdout_stderr_and_exit_code(tmp_path, capsys, exit_code):
+    script = tmp_path / "tools" / "phase3_h1.py"
+    script.parent.mkdir()
+    script.write_text(
+        "import sys\nprint('stdout from real child', flush=True)\n"
+        "print('stderr from real child', file=sys.stderr, flush=True)\n"
+        f"raise SystemExit({exit_code})\n", encoding="utf-8")
+    namespace = {"subprocess": subprocess, "sys": sys, "DRIVE_ROOT": tmp_path,
+                 "CU_RATE": 1.54, "REPO": tmp_path}
+    exec(compile(ast.Module(body=[p3_definition()], type_ignores=[]), "notebook-p3", "exec"), namespace)
+    if exit_code:
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            namespace["p3"]("prepare")
+        assert exc.value.returncode == exit_code
+    else:
+        namespace["p3"]("prepare")
+    captured = capsys.readouterr()
+    # Sandboxed Python launchers may print diagnostics before the child starts.
+    assert captured.out.endswith("stdout from real child\nstderr from real child\n")
+    assert captured.err == ""
 
 
 def test_current_notebook_matches_builder_compiles_and_keeps_safe_defaults():

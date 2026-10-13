@@ -154,6 +154,29 @@ MyDrive/wild_diff_icmh/
   `huggingface-hub` ghim theo bản của Colab), không cài vào môi trường codec.
 - Runtime ngắt giữa chừng: chạy lại từ Bước 1; điểm đã chấm không nén/chấm lại.
 
+## Phase 3 H1 — chạy tiếp theo phiên (bản sửa 13/10/2026)
+
+- Notebook chính: `Wild_Diff_ICMH_Phase3_H1.ipynb`. `SESSION_HOURS = 1.5` là
+  **ngân sách training mới cho mỗi lần `trainer.fit`**, không cộng thời gian training
+  của phiên trước. Chuẩn bị dữ liệu, dựng model, chép checkpoint và đánh giá nằm ngoài
+  giới hạn này; chúng vẫn có thể tiêu tốn CU khi runtime GPU còn kết nối.
+- Nguyên nhân lượt 500 → 1000 dừng ở 862: Timer mặc định của Lightning khôi phục
+  thời gian đã chạy trong checkpoint, nên mốc 90 phút bị tính cộng dồn. Helper H1
+  nay truyền `--session-time-limit`: chỉ đặt lại thời gian Timer, giữ nguyên trọng số,
+  optimizer, scheduler, vòng lặp và tổng số bước. Không sửa file checkpoint gốc hay
+  cấu hình đã đóng băng. Lệnh `train.py` không có cờ này vẫn giữ hành vi cũ.
+- Runtime còn hoạt động: chạy **2A**, rồi cell **11** với `RUN_EXTENSION = True`,
+  `EXTEND_TO = 1000` nếu quyết định hoàn tất mốc này. Runtime mới: mở notebook hiện tại,
+  chọn L4, chạy **1 → 6**, rồi 11; không cần train lại 7/8. Số bước là **tổng 1000**,
+  không phải thêm 1000. Log in rõ bước bắt đầu, mục tiêu và thời gian phiên mới.
+- Pull không thay các cell đang mở. Để dùng wrapper log mới, mở lại notebook từ
+  GitHub/Colab; không cần chép đoạn sửa tạm. Helper in tiến trình chuẩn bị, đọc/copy
+  và kiểm tra snapshot trước decode, rồi stream cả stdout/stderr và báo lỗi nonzero.
+- Nếu muốn chấm checkpoint mới, chạy **9 → 10**; cell 9 chuẩn bị lại môi trường detector
+  khi runtime mới. Không tự bật 12 (đánh giá toàn bộ) hoặc kéo dài 3000 bước. Giữ các
+  snapshot 500/862 và kết quả cũ; sửa Timer không chứng minh chất lượng tốt hơn.
+- Các kiểm thử CPU xác nhận hành vi resume, không thay cho xác nhận chạy thật trên Colab.
+
 ## Compute unit
 
 - Hằng số `COLAB_CU_PER_HOUR = 1.54` trong notebook chỉ để ước lượng. CU thật = chênh lệch
