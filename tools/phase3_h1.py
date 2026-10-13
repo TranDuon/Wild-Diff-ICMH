@@ -148,6 +148,7 @@ def run_logged(command, p, name, rate):
 
 
 def prepare(p):
+    print("[Prepare 1/3] Đọc manifest và tài sản Phase 2 đã lưu...", flush=True)
     rows = read_jsonl(MANIFEST)
     for key in ("tags", "full", "illumination", "detections"):
         if not p[key].is_file():
@@ -158,6 +159,7 @@ def prepare(p):
                or not isinstance(cache[row["image_id"]].get("tags"), str)]
     if missing:
         raise ValueError(f"Missing cached RAM tags for {len(missing)} train/val images")
+    print(f"[Prepare 2/3] Kiểm tra {len(trainval)} ảnh train/val local...", flush=True)
     missing_images = [row["relative_path"] for row in trainval if not (p["images"] / row["relative_path"]).is_file()]
     if missing_images:
         raise FileNotFoundError(f"{len(missing_images)} local images missing. Rerun step 4.")
@@ -170,6 +172,7 @@ def prepare(p):
     freeze(p["quick"], "\n".join(chosen) + "\n")
     # Spread the smoke sample across the deterministic selection.
     freeze(p["smoke"], "\n".join(chosen[index] for index in (0, 7, 15, 23)) + "\n")
+    print("[Prepare 3/3] Kiểm tra mã băm dữ liệu/protocol cố định...", flush=True)
     contract = {**PROTOCOL, "manifest_sha256": digest(MANIFEST), "tags_sha256": digest(p["tags"]),
                 "quick_sha256": digest(p["quick"]), "full_sha256": digest(p["full"]),
                 "illumination_sha256": digest(p["illumination"]), "detections_sha256": digest(p["detections"])}
@@ -182,6 +185,7 @@ def prepare(p):
 
 def checkpoint_step(path):
     # Only user-trusted project files; checkpoint includes optimizer state.
+    print(f"Đọc/kiểm tra checkpoint (CPU, có thể mất vài phút): {path}", flush=True)
     import torch
     from utils.checkpoint_contract import validate_project_resume_checkpoint
     checkpoint = torch.load(str(path), map_location="cpu", weights_only=False)
@@ -197,6 +201,9 @@ def train(p, target, hours, rate):
         raise ValueError("Targets: 20 smoke, 500 pilot, 1000/3000 explicit extension")
     if not 0 < hours <= 5:
         raise ValueError("Session hours must be >0 and <=5")
+    seconds = int(hours * 3600)
+    if seconds < 1:
+        raise ValueError("Session hours must allow at least one second of training")
     prepare(p)
     # Smoke has its own run; never resume the old site A01 or seed a pilot
     # from a smoke run's optimizer. The pilot starts from the author weights.
@@ -209,6 +216,7 @@ def train(p, target, hours, rate):
                   "configs/model/diffeic.yaml", "configs/dataset/kgalagadi_train.yaml", "configs/dataset/kgalagadi_val.yaml")]}
     freeze(p["run"] / "experiment_contract.json", json.dumps(contract, sort_keys=True, indent=2) + "\n")
     last = p["run"] / "checkpoints/last.ckpt"
+    step = 0
     if last.is_file():
         step = checkpoint_step(last)  # fail closed: no silent restart on corruption
         if step >= target:
@@ -219,9 +227,11 @@ def train(p, target, hours, rate):
     author = p["checkpoints"] / "difficmh_models/CNscale1.0_1_1_2_2_WTagGCM_bs16x1_lr0.00005_cfg7.0/model.ckpt"
     if not author.is_file():
         raise FileNotFoundError(author)
-    seconds = int(hours * 3600)
     max_time = f"00:{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+    print(f"Train: {step} → {target} tổng optimizer steps; ngân sách mới {max_time} "
+          "cho phiên training (chưa gồm chuẩn bị).", flush=True)
     command = [sys.executable, "-u", "train.py", "--config", CONFIG, "--init-checkpoint", author,
+               "--session-time-limit",
                "--resume", str(last) if last.is_file() else "auto",
                f"lightning.trainer.max_steps={target}", f"lightning.trainer.max_time={max_time}"]
     run_logged(command, p, f"train_{target}", rate)
@@ -235,14 +245,17 @@ def snapshot(p):
     step = checkpoint_step(source)
     target = p["phase"] / "snapshots" / p["run"].parent.name / f"step_{step:06d}" / "checkpoints/last.ckpt"
     if not target.exists():
+        print(f"Snapshot: chép checkpoint cố định lên Drive: {target}", flush=True)
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".part")
         shutil.copyfile(source, temporary)
         if checkpoint_step(temporary) != step:
             raise RuntimeError("Checkpoint changed while copying")
         os.replace(temporary, target)
-    elif digest(target) != digest(source):
-        raise RuntimeError("Same global step has different weights; preserve old snapshot and inspect run.")
+    else:
+        print("Snapshot đã có: kiểm tra mã băm checkpoint (CPU/Drive)...", flush=True)
+        if digest(target) != digest(source):
+            raise RuntimeError("Same global step has different weights; preserve old snapshot and inspect run.")
     freeze(target.parent.parent / "config_model.yaml", (p["run"] / "config_model.yaml").read_text(encoding="utf-8"))
     return target, step
 
@@ -262,6 +275,7 @@ def assert_archive_complete(root, selected):
 
 
 def evaluate(p, scope, rate, detect_python):
+    print(f"Đánh giá {scope}: kiểm tra dữ liệu và tạo/kiểm tra snapshot...", flush=True)
     prepare(p)
     if scope == "smoke":
         p = {**p, "run": p["root"] / "runs/h1_pooled_smoke_ls512/lambda_2"}
@@ -280,6 +294,7 @@ def evaluate(p, scope, rate, detect_python):
         assert_archive_complete(p["b0"], selected)
     steps = 5 if scope == "smoke" else 50
     folder = p["phase"] / "archive" / f"step_{step:06d}_{scope}_ddim{steps}"
+    print(f"Đánh giá step {step}, {len(selected)} ảnh: kiểm tra mã băm snapshot trước decode...", flush=True)
     info = {"protocol": PROTOCOL, "scope": scope, "steps": steps, "checkpoint_sha256": digest(checkpoint),
             "dev_sha256": digest(selection), "checkpoint_step": step}
     freeze(folder / "evaluation_contract.json", json.dumps(info, sort_keys=True, indent=2) + "\n")

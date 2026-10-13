@@ -157,6 +157,38 @@ def test_invalid_checkpoint_does_not_silently_restart(tmp_path, monkeypatch):
         h1.train(p, 500, 1.5, 1.54)
 
 
+def test_extension_resumes_same_checkpoint_with_fresh_session_flag(tmp_path, monkeypatch, capsys):
+    p = h1.paths(tmp_path)
+    p["phase"].mkdir(parents=True)
+    h1.write_json(p["phase"] / "protocol.json", {})
+    last = p["run"] / "checkpoints/last.ckpt"
+    last.parent.mkdir(parents=True)
+    last.touch()
+    p["checkpoints"] = tmp_path / "authors"
+    author = p["checkpoints"] / "difficmh_models/CNscale1.0_1_1_2_2_WTagGCM_bs16x1_lr0.00005_cfg7.0/model.ckpt"
+    author.parent.mkdir(parents=True)
+    author.touch()
+    monkeypatch.setattr(h1, "prepare", lambda p: None)
+    steps = iter((862, 1000))
+    monkeypatch.setattr(h1, "checkpoint_step", lambda path: next(steps))
+    commands = []
+    monkeypatch.setattr(h1, "run_logged", lambda command, *args: commands.append(command))
+    h1.train(p, 1000, 1.5, 1.54)
+    command = commands[0]
+    assert "--session-time-limit" in command
+    assert command[command.index("--resume") + 1] == str(last)
+    assert "lightning.trainer.max_steps=1000" in command
+    assert "lightning.trainer.max_time=00:01:30:00" in command
+    assert "862 → 1000" in capsys.readouterr().out
+    assert last.read_bytes() == b""  # no checkpoint rewriting in the helper
+
+
+def test_subsecond_session_is_rejected_before_preparation(tmp_path, monkeypatch):
+    monkeypatch.setattr(h1, "prepare", lambda p: pytest.fail("Must fail before preparation"))
+    with pytest.raises(ValueError, match="at least one second"):
+        h1.train(h1.paths(tmp_path), 500, .00001, 1.54)
+
+
 def test_loss_only_validation_executes_without_sampling():
     from types import SimpleNamespace
     tree = ast.parse((ROOT / "model/diffeic.py").read_text(encoding="utf-8"))

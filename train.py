@@ -29,6 +29,7 @@ from utils.checkpoint_contract import (
     validate_project_resume_checkpoint,
 )
 from utils.common import instantiate_from_config, load_state_dict
+from utils.session_timer import configure_session_timer
 
 
 def _load_config(path: str):
@@ -239,6 +240,8 @@ def main() -> None:
     parser.add_argument("--init-checkpoint", default=None, help="weights-only warm start for a new H1/H2 run")
     parser.add_argument("--resume", default=None, help="project .ckpt path, or 'auto', for full-state resume")
     parser.add_argument("--resume-codec", action="store_true", help="legacy: warm-start only preprocess_model")
+    parser.add_argument("--session-time-limit", action="store_true",
+                        help="fresh max_time allowance per fit; restore all learning state on resume")
     parser.add_argument("overrides", nargs="*", help="OmegaConf dot-list overrides")
     args = parser.parse_args()
 
@@ -248,6 +251,12 @@ def main() -> None:
     OmegaConf.resolve(config)
     print("[Train 1/6] Config resolved", flush=True)
     print(OmegaConf.to_yaml(config))
+
+    # Validate the allowance before loading the large model. Keep saved config
+    # unchanged: the runtime flag is not part of the frozen experiment hashes.
+    session_callbacks, trainer_options = configure_session_timer(
+        [], config.lightning.trainer, enabled=args.session_time_limit
+    )
 
     pl.seed_everything(int(config.lightning.seed), workers=True)
     print("[Train 2/6] Checking manifests, images and cached tags", flush=True)
@@ -288,7 +297,8 @@ def main() -> None:
     print("[Train 4/6] Resolving author warm start / project resume", flush=True)
     if resume_path:
         print(
-            "Validated project checkpoint contract, optimizer state and global step",
+            "Validated project checkpoint contract, optimizer state and global step: "
+            f"{resume_checkpoint['global_step']}",
             flush=True,
         )
         del resume_checkpoint
@@ -328,7 +338,11 @@ def main() -> None:
 
     print("[Train 5/6] Initializing Lightning trainer", flush=True)
     callbacks = [instantiate_from_config(item) for item in config.lightning.callbacks]
-    trainer = pl.Trainer(callbacks=callbacks, **config.lightning.trainer)
+    if session_callbacks:
+        from lightning.pytorch.callbacks import Timer
+        if any(isinstance(callback, Timer) for callback in callbacks):
+            raise ValueError("--session-time-limit cannot be combined with another Timer callback")
+    trainer = pl.Trainer(callbacks=callbacks + session_callbacks, **trainer_options)
     print("[Train 6/6] Starting trainer.fit", flush=True)
     trainer.fit(model, datamodule=data_module, ckpt_path=resume_path)
     _save_final_checkpoint(trainer, save_dir)
