@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: H1 — Fine-tuning thích ứng miền
 status: executing
-stopped_at: H1 low-LR recovery200 finished and reviewed; H2 ROI alpha2 pilot implementation complete locally; live H2 run pending
-last_updated: "2026-10-14T14:17:30Z"
+stopped_at: Fresh-L4 Recovery notebook H2 setup complete; live H2 overlay approval, train200 and eval30 pending
+last_updated: "2026-10-14T15:06:43Z"
 last_activity: 2026-10-14
-last_activity_desc: Verified completed H1 recovery200 evidence and implemented bounded paired H2 ROI pilot in the existing Recovery notebook; no H2 GPU run yet
-state_head: c4a0373
+last_activity_desc: Added explicit fresh-L4 H2 setup to the existing Recovery notebook; no H1 rerun or live H2 GPU run
+state_head: 70a2956
 progress:
   total_phases: 6
   completed_phases: 2
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 3 — H1 — Fine-tuning thích ứng miền
-Plan: H1 recovery200 completed; bounded H2 ROI-V1 alpha2/background1 pilot implemented via quick task 261014-otr; full Phase 3 experimental completion pending
-Status: H1 recovery200 checkpoint, loss/LR log and frozen-dev30 comparison confirmed from Drive. H2 code and existing Recovery notebook are ready locally, but H2 has NOT been run on GPU and Phase 3/4 are not complete.
+Plan: H1 recovery200 completed; bounded H2 ROI-V1 alpha2/background1 pilot implemented via quick tasks 261014-otr and 261014-twb; full Phase 3 experimental completion pending
+Status: H1 recovery200 checkpoint, loss/LR log and frozen-dev30 comparison confirmed from Drive. The existing Recovery notebook now includes fresh-L4 H2 setup, but H2 has NOT been run on GPU and Phase 3/4 are not complete.
 Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Notebook Phase 3 và recovery clone/pull `main`; không dùng notebook legacy còn trỏ nhánh `phase2` để lấy bản sửa mới.
-Last activity: 2026-10-14 — Confirmed the completed H1 low-LR 200-step control, implemented H2 with own artifacts and mask preflight in the existing notebook; final CPU suite 299 passed, 2 skipped, then 45 affected tests passed after hardening. Live H2 pilot awaits explicit user action.
+Last activity: 2026-10-14 — Added H2-only dependency and detector setup to the same Recovery notebook for a deleted Colab runtime. The directly affected notebook/dependency suites passed 41 tests after final guidance fixes. Live H2 mask review, train200 and eval30 await explicit user action.
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -113,6 +113,7 @@ None yet.
 | 261013-fzr | Fix Timer mỗi phiên H1 resume, giữ trạng thái học; notebook stream log, 191 CPU tests +32 real-Lightning targeted tests; chưa chạy GPU bản sửa | 2026-10-13 | c05f6ad | [261013-fzr-fix-h1-resume-with-a-fresh-per-session-t](./quick/261013-fzr-fix-h1-resume-with-a-fresh-per-session-t/) |
 | 261013-i7u | Audit B0/H1 cùng dev30 từ cache Drive; notebook CPU-first + run low-LR 200 bước riêng, hash consent, loss CSV; 253 CPU tests passed, chưa chạy trial GPU | 2026-10-13 | 687e660 | [261013-i7u-audit-cached-h1-rate-quality-tradeoff-an](./quick/261013-i7u-audit-cached-h1-rate-quality-tradeoff-an/) |
 | 261014-otr | H2 ROI-V1 alpha2 pilot200 ghép cặp với H1 recovery200 đã xong; sửa notebook Recovery tại chỗ, preflight mask, H2-only dev30; GPU H2 chưa chạy | 2026-10-14 | c4a0373 | [261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2](./quick/261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2/) |
+| 261014-twb | Chuẩn bị riêng H2 cho runtime L4 mới trong notebook Recovery; không chạy lại H1, H2 GPU vẫn chờ | 2026-10-14 | 70a2956 | [261014-twb-fix-existing-recovery-notebook-for-a-new](./quick/261014-twb-fix-existing-recovery-notebook-for-a-new/) |
 
 ## Deferred Items
 
@@ -124,6 +125,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T14:17:30Z
-Stopped at: H1 recovery200 evidence confirmed; H2 implementation and in-place notebook ready; publication and live H2 pilot still pending
-Resume file: .planning/quick/261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2/261014-otr-SUMMARY.md
+Last session: 2026-10-14T15:06:43Z
+Stopped at: Fresh-L4 H2 setup implemented in the same notebook; live H2 pilot still pending
+Resume file: .planning/quick/261014-twb-fix-existing-recovery-notebook-for-a-new/261014-twb-SUMMARY.md
