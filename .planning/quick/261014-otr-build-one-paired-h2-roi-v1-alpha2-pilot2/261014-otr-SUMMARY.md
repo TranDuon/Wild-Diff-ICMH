@@ -1,17 +1,17 @@
 ---
 quick: 261014-otr
-status: implementation_complete_publication_pending
+status: complete
 completed: 2026-10-14
-implementation_commits: []
+implementation_commits: [c4a0373]
 experimental_status: h2_gpu_pilot_pending
 ---
 
 # One paired H2 ROI-V1 pilot in the existing Recovery notebook
 
-Implementation and CPU verification are complete locally. The actual H2 GPU
-run, visual mask approval, 30-image evaluation and phase acceptance are not.
-At this handoff, commit/push still await the Git approval gate; do not instruct
-the user to pull/run the continuation until publication succeeds.
+Implementation and CPU verification are complete. The actual H2 GPU run,
+visual mask approval, 30-image evaluation and phase acceptance are not. A local
+commit alone does not update the user's open Colab repository; the final push
+must succeed before they run the continuation cell.
 
 ## Delivered
 

@@ -7,7 +7,7 @@ stopped_at: H1 low-LR recovery200 finished and reviewed; H2 ROI alpha2 pilot imp
 last_updated: "2026-10-14T14:17:30Z"
 last_activity: 2026-10-14
 last_activity_desc: Verified completed H1 recovery200 evidence and implemented bounded paired H2 ROI pilot in the existing Recovery notebook; no H2 GPU run yet
-state_head: 23fa213
+state_head: c4a0373
 progress:
   total_phases: 6
   completed_phases: 2
@@ -112,6 +112,7 @@ None yet.
 | 261008-m6w | Notebook Phase3 H1 pooled λ2 pilot500, dev30, pull cố định, resume/snapshot/cache; chưa confirm GPU | 2026-10-08 | 6c04451 | [261008-m6w-build-resource-efficient-phase3-h1-noteb](./quick/261008-m6w-build-resource-efficient-phase3-h1-noteb/) |
 | 261013-fzr | Fix Timer mỗi phiên H1 resume, giữ trạng thái học; notebook stream log, 191 CPU tests +32 real-Lightning targeted tests; chưa chạy GPU bản sửa | 2026-10-13 | c05f6ad | [261013-fzr-fix-h1-resume-with-a-fresh-per-session-t](./quick/261013-fzr-fix-h1-resume-with-a-fresh-per-session-t/) |
 | 261013-i7u | Audit B0/H1 cùng dev30 từ cache Drive; notebook CPU-first + run low-LR 200 bước riêng, hash consent, loss CSV; 253 CPU tests passed, chưa chạy trial GPU | 2026-10-13 | 687e660 | [261013-i7u-audit-cached-h1-rate-quality-tradeoff-an](./quick/261013-i7u-audit-cached-h1-rate-quality-tradeoff-an/) |
+| 261014-otr | H2 ROI-V1 alpha2 pilot200 ghép cặp với H1 recovery200 đã xong; sửa notebook Recovery tại chỗ, preflight mask, H2-only dev30; GPU H2 chưa chạy | 2026-10-14 | c4a0373 | [261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2](./quick/261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2/) |
 
 ## Deferred Items
 
