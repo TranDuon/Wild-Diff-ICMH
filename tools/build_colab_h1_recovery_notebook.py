@@ -17,6 +17,11 @@ def gated(source: str, condition: str = "RUN_TRIAL or RUN_EVALUATION"):
 
 
 dependency_setup = reused("Bước 3 ")["source"].replace("subprocess.run(", "run_checked(")
+h2_dependency_setup = dependency_setup.replace(
+    "/content/requirements-colab-safe.txt", "/content/requirements-colab-safe-h2.txt",
+).replace(
+    "/content/colab-core-constraints.txt", "/content/colab-core-constraints-h2.txt",
+)
 image_setup = reused("Bước 4 ")["source"].replace(
     "DRIVE_ROOT = Path('/content/drive/MyDrive/wild_diff_icmh')",
     "# DRIVE_ROOT đã chọn ở Bước 1; không đổi đường dẫn giữa chừng.",
@@ -36,20 +41,22 @@ detector_setup = SNIPPETS["__DETECT_ENV__"].replace(
 
 cells = [
     markdown("""
-    # Wild-Diff-ICMH — H1 Recovery và tiếp tục H2 trong cùng phiên
+    # Wild-Diff-ICMH — H1 Recovery và H2 ROI pilot
 
-    **Đã chạy xong H1 Recovery 200 và chấm 30 ảnh?** Giữ nguyên notebook này,
-    phiên L4 và dữ liệu `/content`. Không chạy lại phần training H1. Dùng phần
-    **H2 tiếp tục trong phiên hiện tại** ở cuối notebook: chuẩn bị/xem ROI → tự
-    xác nhận → train H2 200 → chấm riêng H2 30 ảnh → gửi kết quả. Đây là một
-    lượt thử ưu tiên vùng con vật, không phải tái hiện Xie-SGC hoặc quét cấu hình.
-    Nội dung H1 bên dưới được giữ để tái lập; các cờ nặng mặc định vẫn TẮT.
+    **Runtime L4 mới sau khi phiên cũ đã bị xóa:** `/content` cũ không còn, nhưng
+    đối chứng H1 đã hoàn tất vẫn nằm trên Drive. Trong chính notebook này, chạy
+    **1 → 2 → H2-A → H2-B → H2-C → H2-D** ở cuối. H2-A chỉ đặt cờ TẮT; bạn phải chủ động
+    bật lần lượt hai cell setup H2 trước khi hiện bảng điều khiển. Không chạy
+    lại các cell H1 3–9, đặc biệt **không chạy H1 4–8**. H2 preflight/duyệt
+    overlay/train200/eval30/status đều là thao tác riêng trong bảng nút.
+    **Không dùng Run All**: các cell H1 lịch sử có tác dụng riêng nếu bật cờ.
 
-    **H1 cũ đã tới 1.000 bước.** Giữ nguyên run, checkpoint và kết quả đó.
-    Notebook này đọc dữ liệu 30 ảnh đã lưu trước; **chạy 1 → 2 → 3 bằng CPU**.
+    **Phần H1 bên dưới chỉ giữ để tái lập lịch sử, không chạy cho H2:** H1 cũ đã
+    tới 1.000 bước và Recovery200 đã hoàn tất. Giữ nguyên run/checkpoint/kết quả.
+    Trước đây có thể chạy 1 → 2 → 3 bằng CPU để đọc báo cáo H1;
     Không cần GPU, chép toàn bộ ảnh, mở checkpoint nhiều gigabyte hay cài detector để đọc báo cáo.
 
-    Chỉ khi báo cáo cho phép và bạn đồng ý mới bật thử nghiệm ở Bước 4, chuyển runtime
+    Trong quy trình H1 lịch sử, chỉ khi báo cáo cho phép và bạn đồng ý mới bật Bước 4, chuyển runtime
     sang **L4**, rồi chạy lại **1 → 4 → 5 → 6 → 7**. Run mới có tối đa **200 bước tổng**,
     khởi đầu từ trọng số tác giả, optimizer mới; tốc độ học chính 0,00001,
     phụ 0,001. Đây là giả thuyết cần kiểm tra, không phải lỗi tốc độ học đã được xác nhận.
@@ -57,10 +64,8 @@ cells = [
 
     **Run all mặc định không train hoặc sinh ảnh.** Không chạy lại B0, Xie-SGC, 3.000 bước,
     toàn bộ validation hay test. Phase 3 chưa hoàn thành chỉ vì notebook chạy hết.
-    Sửa script sau đó dùng **2A** rồi chạy lại cell lỗi. Pull không thay cấu trúc
-    notebook đang mở. Nếu notebook mở trước bản H2, chỉ thêm một cell continuation
-    ở cuối **chính notebook/phiên này** theo `docs/H2_ROI_PILOT.md`; các lần sửa sau
-    dùng pull và chạy lại cell ấy. Không mở notebook khác để đổi luồng.
+    Sửa script sau đó dùng **2A** rồi chạy lại cell lỗi nếu repo sạch. Pull không thay cấu trúc
+    notebook đang mở. Hướng dẫn H2 cho phiên mới: `docs/H2_ROI_PILOT.md`.
     """),
     markdown("## 1 — Gắn Drive, chọn đường dẫn (CPU được)"),
     code("""
@@ -316,28 +321,124 @@ recovery('evaluate', '--enable', '--acknowledge-review', ACKNOWLEDGE_REVIEW,
     """),
 ]
 
-# Keep the old H1 cells/controls intact. This final cell is also the once-only
-# bootstrap for a notebook already open before git pull changed its file.
+# Keep the old H1 cells/controls intact. H2 setup is separate from H1 gates.
 cells.extend([
     markdown("""
-    ## H2 — Tiếp tục trong phiên L4 hiện tại, không tạo notebook/runtime mới
+    ## H2-A — Cờ setup cho phiên L4 mới (TẮT mặc định)
 
-    Chỉ dùng khi H1 Recovery đã train **200/200** và đã có kết quả chấm 30 ảnh.
-    Không chạy lại cell H1 4–8. Cell dưới chỉ hiển thị bảng nút; **chưa chép ảnh,
-    cài môi trường, train hay sinh ảnh**. Lần lượt: chuẩn bị/xem ROI → tick xác nhận
-    → train H2 tới 200 → chấm H2 30 ảnh → đọc trạng thái.
+    Sau 1 (Drive) và 2 (main) trong notebook này, chọn L4, rồi bật riêng
+    `RUN_H2_DEPENDENCIES` để chạy H2-B. Sau đó bật riêng `RUN_H2_DETECTOR` để chạy
+    H2-C. Cả hai cờ mặc định False; chạy cell chỉ đặt cờ, không cài gì. Không
+    chạy H1 4–8; chúng là lịch sử của lượt H1 đã hoàn tất trên Drive.
+    """),
+    code("""
+    RUN_H2_DEPENDENCIES = False  # đổi True rồi chỉ chạy H2-B; sau đó trả False
+    RUN_H2_DETECTOR = False  # đổi True rồi chỉ chạy H2-C; sau đó trả False
+    """),
+    markdown("""
+    ## H2-B — Cài dependency training H2, chuẩn bị đường dẫn checkpoint
+
+    Chỉ chạy khi đã bật `RUN_H2_DEPENDENCIES` ở H2-A. Giữ nguyên NumPy/SciPy/
+    Torch/Torchvision của Colab; kiểm tra import training và cài pycocotools.
+    Chỉ tạo link `./checkpoints` tới ổ local; **không chép checkpoint/ảnh**.
+    Runner H2 tự stage đúng hai checkpoint và asset theo từng thao tác sau.
+    """),
+    gated("""
+assert (REPO / '.git').is_dir(), 'Chạy Bước 2 lấy main trước H2 setup.'
+assert DRIVE_ROOT.is_dir(), 'Chạy Bước 1 gắn Drive trước H2 setup.'
+assert shutil.which('nvidia-smi'), 'Chọn runtime L4 trước H2 setup.'
+gpu_names = subprocess.check_output(
+    ['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], text=True,
+).splitlines()
+assert len(gpu_names) == 1 and gpu_names[0].strip() in ('NVIDIA L4', 'L4'), (
+    f'H2 pilot yêu cầu đúng một L4; GPU hiện tại: {gpu_names}'
+)
+""" + h2_dependency_setup + """
+import importlib.util
+if importlib.util.find_spec('pycocotools') is None:
+    run_checked([sys.executable, '-m', 'pip', 'install', '-q', '--no-deps', 'pycocotools==2.0.11'])
+import pycocotools
+CKPT_ROOT = Path('/content/data/wild_diff_icmh/checkpoints')
+CKPT_ROOT.mkdir(parents=True, exist_ok=True)
+repo_checkpoints = REPO / 'checkpoints'
+if repo_checkpoints.is_symlink():
+    assert repo_checkpoints.resolve() == CKPT_ROOT.resolve(), (
+        f'{repo_checkpoints} không trỏ tới {CKPT_ROOT}'
+    )
+elif repo_checkpoints.exists():
+    raise RuntimeError(f'{repo_checkpoints} đã tồn tại và không phải link checkpoint được duyệt')
+else:
+    repo_checkpoints.symlink_to(CKPT_ROOT, target_is_directory=True)
+assert repo_checkpoints.is_symlink() and repo_checkpoints.resolve() == CKPT_ROOT.resolve()
+print('H2 training imports, pycocotools và link checkpoint đã sẵn sàng; chưa chép tài sản.')
+""", "RUN_H2_DEPENDENCIES"),
+    markdown("""
+    ## H2-C — Dựng detector riêng cho H2, không chấm H1
+
+    Chỉ chạy khi đã bật `RUN_H2_DETECTOR` ở H2-A. Môi trường riêng tái sử dụng
+    Torch của Colab và ghi log dưới H2 trên Drive. Cell này chỉ kiểm tra import
+    PytorchWildlife và `.ready`; **không chạy detector trên ảnh nào**.
+    """),
+    gated("""
+assert (REPO / '.git').is_dir(), 'Chạy Bước 2 lấy main trước H2 setup.'
+assert DRIVE_ROOT.is_dir(), 'Chạy Bước 1 gắn Drive trước H2 setup.'
+assert shutil.which('nvidia-smi'), 'Chọn runtime L4 trước H2 setup.'
+gpu_names = subprocess.check_output(
+    ['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], text=True,
+).splitlines()
+assert len(gpu_names) == 1 and gpu_names[0].strip() in ('NVIDIA L4', 'L4'), (
+    f'H2 pilot yêu cầu đúng một L4; GPU hiện tại: {gpu_names}'
+)
+
+def h2_run_logged(command):
+    log_path = DRIVE_ROOT / 'phase3/h2_roi_v1_alpha2/logs/h2_detect_env.log'
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    command = list(map(str, command))
+    with log_path.open('a', encoding='utf-8') as log_stream:
+        with subprocess.Popen(command, cwd=REPO, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, bufsize=1) as process:
+            for line in process.stdout:
+                print(line, end='', flush=True)
+                log_stream.write(line)
+                log_stream.flush()
+            return_code = process.wait()
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, command)
+
+DETECT_ENV = Path('/content/envs/h1-recovery-detect')
+DETECT_PY = DETECT_ENV / 'bin/python'
+DETECT_READY = DETECT_ENV / '.ready'
+if not DETECT_READY.is_file():
+    h2_run_logged([sys.executable, '-m', 'pip', 'install', '-q', 'virtualenv'])
+    h2_run_logged([sys.executable, '-m', 'virtualenv', '--system-site-packages', DETECT_ENV])
+    from importlib import metadata as importlib_metadata
+    hub_pin = f"huggingface-hub=={importlib_metadata.version('huggingface_hub')}"
+    h2_run_logged([DETECT_PY, '-m', 'pip', 'install', '-q', 'PytorchWildlife', hub_pin])
+    h2_run_logged([DETECT_PY, '-c', 'from PytorchWildlife.models import detection; print("PytorchWildlife OK")'])
+    DETECT_READY.touch()
+assert DETECT_PY.is_file() and DETECT_READY.is_file(), 'H2 detector chưa sẵn sàng.'
+h2_run_logged([DETECT_PY, '-c', 'from PytorchWildlife.models import detection; print("PytorchWildlife OK")'])
+print('H2 detector đã sẵn sàng:', DETECT_PY)
+""", "RUN_H2_DETECTOR"),
+    markdown("""
+    ## H2-D — Điều khiển pilot, mỗi việc là một nút riêng
+
+    Chỉ dùng khi H1 Recovery đã train **200/200** và chấm xong dev30 trên Drive.
+    Không chạy lại cell H1 4–8. Cell dưới chỉ hiển thị bảng nút; **không tự cài,
+    chép ảnh, train, decode hay chạy detector**. Sau H2-B/C, lần lượt preflight
+    ≤10 ảnh → xem ROI thật → xác nhận hash → train H2 200 → eval H2 dev30 → status.
 
     Run H2 riêng, khởi đầu cùng trọng số tác giả/optimizer mới như H1; chỉ đổi
     trọng số vùng con vật từ 1 lên 2. H1/B0 đã chấm được giữ nguyên và dùng lại.
     Ảnh local đủ dung lượng được bỏ qua; đánh giá chỉ chuẩn bị đúng 30 ảnh.
-    Không reset hoặc ngắt L4 đang có. Mỗi lần sửa: pull **2A** rồi chạy lại cell
-    này để dùng giao diện/script mới; không cần copy thêm cell sửa lỗi.
+    Mỗi lần sửa: pull **2A** rồi chạy lại cell này để dùng giao diện/script mới.
     """),
     code("""
-    # Dùng đúng REPO/DRIVE_ROOT của Recovery đang mở, giữ toàn bộ /content.
+    # Dùng đúng REPO/DRIVE_ROOT của Bước 1/2 trong runtime hiện tại.
     RUN_TRIAL = False
     RUN_EVALUATION = False
-    safe_pull()
+    assert (REPO / '.git').is_dir(), 'Chạy Bước 2 lấy main trước H2-D.'
+    assert DRIVE_ROOT.is_dir(), 'Chạy Bước 1 gắn Drive trước H2-D.'
     import runpy
     H2_CONTINUATION = runpy.run_path(
         str(REPO / 'tools/colab_h2_continuation.py'), run_name='__main__',

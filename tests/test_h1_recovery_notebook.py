@@ -33,6 +33,17 @@ def test_generated_notebook_matches_builder_and_compiles():
             assert cell["outputs"] == [] and cell["execution_count"] is None
 
 
+def test_fresh_h2_path_and_failures_point_to_h2_setup():
+    notebook = builder().build()
+    intro = notebook["cells"][0]["source"]
+    assert "1 → 2 → H2-A → H2-B → H2-C → H2-D" in intro
+    runner = (ROOT / "tools" / "phase3_h2_roi.py").read_text(encoding="utf-8")
+    assert "Run H2-A/B in the Recovery notebook" in runner
+    assert "Run H2-A/C in the Recovery notebook" in runner
+    assert "Run its step5" not in runner
+    assert "repair its step8" not in runner
+
+
 def test_cpu_review_precedes_explicit_heavy_consent():
     sources = code_cells()
     review_index = next(i for i, s in enumerate(sources) if "recovery('review')" in s)
@@ -65,7 +76,9 @@ def test_all_gpu_cells_are_gated_before_first_expensive_action():
             tree = ast.parse(source)
             assert len(tree.body) == 1 and isinstance(tree.body[0], ast.If)
             condition = ast.unparse(tree.body[0].test)
-            assert "RUN_TRIAL" in condition or "RUN_EVALUATION" in condition
+            assert any(flag in condition for flag in (
+                "RUN_TRIAL", "RUN_EVALUATION", "RUN_H2_DEPENDENCIES", "RUN_H2_DETECTOR",
+            ))
     train = next(s for s in code_cells() if "recovery('train'" in s)
     evaluate = next(s for s in code_cells() if "recovery('evaluate'" in s)
     assert train.lstrip().startswith("if RUN_TRIAL:")
@@ -158,11 +171,42 @@ def test_h2_continuation_keeps_same_notebook_and_has_no_default_heavy_job():
     sources = code_cells()
     continuation = next(source for source in sources if "tools/colab_h2_continuation.py" in source)
     assert "RUN_TRIAL = False" in continuation and "RUN_EVALUATION = False" in continuation
-    assert "safe_pull()" in continuation and "runpy.run_path" in continuation
+    assert "safe_pull()" not in continuation and "runpy.run_path" in continuation
+    assert "(REPO / '.git').is_dir()" in continuation
     assert "'REPO': REPO" in continuation and "'DRIVE_ROOT': DRIVE_ROOT" in continuation
     for forbidden in ("pip", "runtime.unassign", "rmtree", "copyfile", "recovery('train'", "recovery('evaluate'"):
         assert forbidden not in continuation
     assert builder().build()["metadata"]["colab"]["name"] == "Wild_Diff_ICMH_H1_Recovery.ipynb"
+
+
+def test_fresh_h2_setup_precedes_controls_and_is_opt_in(capsys):
+    sources = code_cells()
+    flags = next(i for i, source in enumerate(sources) if "RUN_H2_DEPENDENCIES = False" in source)
+    dependencies = next(i for i, source in enumerate(sources) if "requirements-colab-safe-h2" in source)
+    detector = next(i for i, source in enumerate(sources) if "h2_detect_env.log" in source)
+    controls = next(i for i, source in enumerate(sources) if "tools/colab_h2_continuation.py" in source)
+    h1_result = next(i for i, source in enumerate(sources) if "comparisons = sorted" in source)
+    assert h1_result < flags < dependencies < detector < controls
+    assert "RUN_H2_DETECTOR = False" in sources[flags]
+    assert sources[dependencies].lstrip().startswith("if RUN_H2_DEPENDENCIES:")
+    assert sources[detector].lstrip().startswith("if RUN_H2_DETECTOR:")
+    for source, flag in ((sources[dependencies], "RUN_H2_DEPENDENCIES"),
+                         (sources[detector], "RUN_H2_DETECTOR")):
+        exec(compile(source, "disabled-h2-setup", "exec"), {flag: False})
+        for forbidden in ("recovery('train'", "recovery('evaluate'", "require_review_acknowledgement"):
+            assert forbidden not in source
+    assert "Bỏ qua" in capsys.readouterr().out
+
+
+def test_fresh_h2_setup_checks_prerequisites_before_install():
+    sources = code_cells()
+    for marker in ("requirements-colab-safe-h2", "h2_detect_env.log"):
+        source = next(source for source in sources if marker in source)
+        assert "REPO / '.git'" in source
+        assert "DRIVE_ROOT.is_dir()" in source
+        assert "nvidia-smi" in source
+        assert "L4" in source
+        assert source.index("L4") < source.index("'pip', 'install'")
 
 
 def test_h2_bootstrap_uses_current_kernel_paths_without_side_effects(tmp_path):
@@ -175,11 +219,12 @@ def test_h2_bootstrap_uses_current_kernel_paths_without_side_effects(tmp_path):
             return {"controls": "displayed_only"}
     tree = ast.parse(source)
     tree.body = [node for node in tree.body if not isinstance(node, ast.Import)]
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "drive").mkdir()
     namespace = {"REPO": tmp_path, "DRIVE_ROOT": tmp_path / "drive", "CU_RATE": 1.54,
-                 "safe_pull": lambda: calls.append("safe_pull"), "runpy": StubRunpy,
+                 "runpy": StubRunpy,
                  "RUN_TRIAL": True, "RUN_EVALUATION": True}
     exec(compile(tree, "same-kernel-bootstrap", "exec"), namespace)
-    assert calls[0] == "safe_pull"
-    assert calls[1][1]["init_globals"]["REPO"] == tmp_path
-    assert calls[1][1]["init_globals"]["DRIVE_ROOT"] == tmp_path / "drive"
+    assert calls[0][1]["init_globals"]["REPO"] == tmp_path
+    assert calls[0][1]["init_globals"]["DRIVE_ROOT"] == tmp_path / "drive"
     assert namespace["RUN_TRIAL"] is False and namespace["RUN_EVALUATION"] is False

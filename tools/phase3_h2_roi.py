@@ -298,11 +298,11 @@ def _require_environment(*, detect_python=None):
     missing = [m for m in ("torch", "omegaconf", "lightning", "compressai", "ram")
                if importlib.util.find_spec(m) is None]
     if missing:
-        raise RuntimeError(f"Existing Recovery environment is not ready: {missing}. Run its step5 once; do not reset runtime.")
+        raise RuntimeError(f"H2 training environment is not ready: {missing}. Run H2-A/B in the Recovery notebook; do not run H1 Step 5.")
     if detect_python is not None:
         expected = Path("/content/envs/h1-recovery-detect/bin/python")
         if Path(detect_python).resolve() != expected.resolve() or not expected.is_file() or not (expected.parent.parent / ".ready").is_file():
-            raise RuntimeError("Reuse the ready Recovery detector environment; repair its step8 setup explicitly, without launching H1 evaluation.")
+            raise RuntimeError("H2 detector environment is not ready. Run H2-A/C in the Recovery notebook; do not run H1 Step 8 or H1 evaluation.")
     import torch
     if not torch.cuda.is_available():
         raise RuntimeError("Current runtime has no CUDA GPU; keep the existing L4 runtime selected")

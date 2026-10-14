@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = ROOT / "requirements-colab.txt"
 GENERATOR = ROOT / "tools" / "build_colab_training_notebook.py"
 NOTEBOOK = ROOT / "Wild_Diff_ICMH_Kgalagadi_Train.ipynb"
+RECOVERY_NOTEBOOK = ROOT / "Wild_Diff_ICMH_H1_Recovery.ipynb"
+H2_GUIDE = ROOT / "docs" / "H2_ROI_PILOT.md"
 RAM_SOURCE = ROOT / "src" / "recognize-anything"
 RAM_BERT = RAM_SOURCE / "ram" / "models" / "bert.py"
 RAM_PLUS = RAM_SOURCE / "ram" / "models" / "ram_plus.py"
@@ -62,6 +64,51 @@ def requirement_names() -> set[str]:
 
 
 class ColabDependencyContractTests(unittest.TestCase):
+    @staticmethod
+    def _recovery_cell(marker: str) -> str:
+        notebook = json.loads(RECOVERY_NOTEBOOK.read_text(encoding="utf-8"))
+        return next(cell["source"] for cell in notebook["cells"]
+                    if cell["cell_type"] == "code" and marker in cell["source"])
+
+    def test_h2_training_setup_preserves_colab_core_and_prepares_no_assets(self):
+        source = self._recovery_cell("requirements-colab-safe-h2")
+        self.assertIn("normalized.startswith(('numpy', 'scipy'))", source)
+        self.assertIn("core_distributions = ('numpy', 'scipy', 'torch', 'torchvision')", source)
+        self.assertIn("'-c', str(core_constraints)", source)
+        self.assertIn("core_versions_after == core_versions_before", source)
+        self.assertIn("'--no-deps', '--no-build-isolation'", source)
+        self.assertIn("'compressai==1.2.8'", source)
+        self.assertIn("'--force-reinstall', 'src/recognize-anything'", source)
+        self.assertLess(source.index("importlib.invalidate_caches()"), source.index("import ram"))
+        for required in ("import pytorch_msssim", "import compressai.ans",
+                         "import compressai.entropy_models", "import compressai.losses",
+                         "import compressai.zoo", "from model.lfgcm import TagGCM",
+                         "'pycocotools==2.0.11'", "repo_checkpoints.symlink_to(CKPT_ROOT"):
+            self.assertIn(required, source)
+        for forbidden in ("source_files", "copy_checkpoint", "recovery('train'",
+                          "recovery('evaluate'", "require_review_acknowledgement"):
+            self.assertNotIn(forbidden, source)
+
+    def test_h2_detector_setup_is_isolated_and_checks_readiness(self):
+        source = self._recovery_cell("h2_detect_env.log")
+        for required in ("/content/envs/h1-recovery-detect", "--system-site-packages",
+                         "huggingface-hub==", "version('huggingface_hub')",
+                         "'PytorchWildlife'", "from PytorchWildlife.models import detection",
+                         "DETECT_READY.touch()", "DETECT_READY.is_file()",
+                         "DETECT_PY.is_file()"):
+            self.assertIn(required, source)
+        for forbidden in ("recovery('evaluate'", "recovery('train'",
+                          "require_review_acknowledgement", "shutil.rmtree"):
+            self.assertNotIn(forbidden, source)
+
+    def test_h2_guide_starts_from_a_fresh_l4_and_preserves_h1_control(self):
+        guide = H2_GUIDE.read_text(encoding="utf-8")
+        for required in ("runtime L4 mới", "H2-A", "H2-B", "H2-C", "H2-D",
+                         "Run All", "H1 4–8", "Drive", "preflight", "dev30"):
+            self.assertIn(required, guide)
+        self.assertIn("/content` cũ đã mất", guide)
+        self.assertIn("H1 đã lưu trên Drive", guide)
+
     @staticmethod
     def _class_method(path: Path, class_name: str, method_name: str) -> ast.FunctionDef:
         tree = ast.parse(path.read_text(encoding="utf-8"))
