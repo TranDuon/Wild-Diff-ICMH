@@ -1,0 +1,39 @@
+base: train_kgalagadi_h1_low_lr.yaml
+
+preflight:
+  asset_splits: [train, val]
+
+# Paired with completed H1 recovery200: only latent guide weighting differs.
+# Same authored lambda2 weights, fresh optimizer, pooled data and uniform crops.
+model:
+  params:
+    roi_loss_enabled: true
+    roi_weight: 2.0
+    roi_background_weight: 1.0
+    roi_semantic_enabled: false
+    l_semantic_weight: 0.0
+
+lightning:
+  trainer:
+    default_root_dir: ${oc.env:WILD_RUN_DIR,/content/drive/MyDrive/wild_diff_icmh/runs/h2_roi_v1_alpha2_ls512/lambda_2}
+    max_steps: 200
+  callbacks:
+    - target: model.callbacks.TrainingProgressMonitor
+      params:
+        every_n_steps: 50
+    - target: model.callbacks.ThroughputMonitor
+      params:
+        warmup_batches: 8
+    - target: model.callbacks.CropStatsMonitor
+      params:
+        log_every_n_steps: 50
+    - target: utils.h2_training_diagnostics.H2LossCSV
+      params:
+        every_n_steps: 10
+    - target: model.callbacks.ModelCheckpoint
+      params:
+        every_n_train_steps: 100
+        save_top_k: 0
+        save_last: true
+        filename: step-{step:06d}
+        auto_insert_metric_name: false

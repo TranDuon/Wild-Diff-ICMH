@@ -102,6 +102,16 @@ def _run_asset_preflight(config, rows) -> None:
     data_root = Path(str(overrides.get("data_root")))
     site_id = overrides.get("site_id")
     selected = [row for row in rows if site_id is None or row.get("site_id") == site_id]
+    # Keep the full manifest leakage gate above. A bounded H2 training run
+    # needs only train/val assets, not held-out test images. Legacy runs retain
+    # their existing all-split asset checks when this opt-in setting is absent.
+    asset_splits = config.get("preflight", {}).get("asset_splits")
+    if asset_splits is not None:
+        if (not isinstance(asset_splits, (list, tuple)) and type(asset_splits).__name__ != "ListConfig") or not asset_splits:
+            raise ValueError("preflight.asset_splits must be a nonempty split list")
+        if any(split not in {"train", "val", "test"} for split in asset_splits) or len(set(asset_splits)) != len(asset_splits):
+            raise ValueError("preflight.asset_splits contains an invalid/duplicate split")
+        selected = [row for row in selected if row.get("split") in asset_splits]
     if not selected:
         raise ValueError(f"preflight selected no rows for site_id={site_id!r}")
     missing_images = [

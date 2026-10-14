@@ -36,7 +36,14 @@ detector_setup = SNIPPETS["__DETECT_ENV__"].replace(
 
 cells = [
     markdown("""
-    # Wild-Diff-ICMH — Đọc kết quả H1 và thử tốc độ học thấp có kiểm soát
+    # Wild-Diff-ICMH — H1 Recovery và tiếp tục H2 trong cùng phiên
+
+    **Đã chạy xong H1 Recovery 200 và chấm 30 ảnh?** Giữ nguyên notebook này,
+    phiên L4 và dữ liệu `/content`. Không chạy lại phần training H1. Dùng phần
+    **H2 tiếp tục trong phiên hiện tại** ở cuối notebook: chuẩn bị/xem ROI → tự
+    xác nhận → train H2 200 → chấm riêng H2 30 ảnh → gửi kết quả. Đây là một
+    lượt thử ưu tiên vùng con vật, không phải tái hiện Xie-SGC hoặc quét cấu hình.
+    Nội dung H1 bên dưới được giữ để tái lập; các cờ nặng mặc định vẫn TẮT.
 
     **H1 cũ đã tới 1.000 bước.** Giữ nguyên run, checkpoint và kết quả đó.
     Notebook này đọc dữ liệu 30 ảnh đã lưu trước; **chạy 1 → 2 → 3 bằng CPU**.
@@ -50,8 +57,10 @@ cells = [
 
     **Run all mặc định không train hoặc sinh ảnh.** Không chạy lại B0, Xie-SGC, 3.000 bước,
     toàn bộ validation hay test. Phase 3 chưa hoàn thành chỉ vì notebook chạy hết.
-    Mở link notebook mới này một lần; sửa script sau đó dùng **2A** rồi chạy lại cell lỗi,
-    không copy cell sửa tạm. Pull không thay cấu trúc notebook đang mở.
+    Sửa script sau đó dùng **2A** rồi chạy lại cell lỗi. Pull không thay cấu trúc
+    notebook đang mở. Nếu notebook mở trước bản H2, chỉ thêm một cell continuation
+    ở cuối **chính notebook/phiên này** theo `docs/H2_ROI_PILOT.md`; các lần sửa sau
+    dùng pull và chạy lại cell ấy. Không mở notebook khác để đổi luồng.
     """),
     markdown("## 1 — Gắn Drive, chọn đường dẫn (CPU được)"),
     code("""
@@ -306,6 +315,36 @@ recovery('evaluate', '--enable', '--acknowledge-review', ACKNOWLEDGE_REVIEW,
         runtime.unassign()
     """),
 ]
+
+# Keep the old H1 cells/controls intact. This final cell is also the once-only
+# bootstrap for a notebook already open before git pull changed its file.
+cells.extend([
+    markdown("""
+    ## H2 — Tiếp tục trong phiên L4 hiện tại, không tạo notebook/runtime mới
+
+    Chỉ dùng khi H1 Recovery đã train **200/200** và đã có kết quả chấm 30 ảnh.
+    Không chạy lại cell H1 4–8. Cell dưới chỉ hiển thị bảng nút; **chưa chép ảnh,
+    cài môi trường, train hay sinh ảnh**. Lần lượt: chuẩn bị/xem ROI → tick xác nhận
+    → train H2 tới 200 → chấm H2 30 ảnh → đọc trạng thái.
+
+    Run H2 riêng, khởi đầu cùng trọng số tác giả/optimizer mới như H1; chỉ đổi
+    trọng số vùng con vật từ 1 lên 2. H1/B0 đã chấm được giữ nguyên và dùng lại.
+    Ảnh local đủ dung lượng được bỏ qua; đánh giá chỉ chuẩn bị đúng 30 ảnh.
+    Không reset hoặc ngắt L4 đang có. Mỗi lần sửa: pull **2A** rồi chạy lại cell
+    này để dùng giao diện/script mới; không cần copy thêm cell sửa lỗi.
+    """),
+    code("""
+    # Dùng đúng REPO/DRIVE_ROOT của Recovery đang mở, giữ toàn bộ /content.
+    RUN_TRIAL = False
+    RUN_EVALUATION = False
+    safe_pull()
+    import runpy
+    H2_CONTINUATION = runpy.run_path(
+        str(REPO / 'tools/colab_h2_continuation.py'), run_name='__main__',
+        init_globals={'REPO': REPO, 'DRIVE_ROOT': DRIVE_ROOT, 'CU_RATE': CU_RATE},
+    )
+    """),
+])
 
 
 def build():

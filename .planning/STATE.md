@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: H1 — Fine-tuning thích ứng miền
 status: executing
-stopped_at: H1 reached1000 verified from Drive; cached dev30 reviewed; isolated 200-step low-LR notebook ready, live trial pending
-last_updated: "2026-10-13T07:25:12Z"
-last_activity: 2026-10-13
-last_activity_desc: Reviewed cached B0/H1 on identical dev30 and prepared consent-gated low-LR recovery; Phase 3 remains incomplete
-state_head: 687e660
+stopped_at: H1 low-LR recovery200 finished and reviewed; H2 ROI alpha2 pilot implementation complete locally; live H2 run pending
+last_updated: "2026-10-14T14:17:30Z"
+last_activity: 2026-10-14
+last_activity_desc: Verified completed H1 recovery200 evidence and implemented bounded paired H2 ROI pilot in the existing Recovery notebook; no H2 GPU run yet
+state_head: 23fa213
 progress:
   total_phases: 6
   completed_phases: 2
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 3 — H1 — Fine-tuning thích ứng miền
-Plan: H1 pilot notebook implemented via quick task 261008-m6w; full Phase 3 experimental completion pending
-Status: Pilot500/862/1000 quick results confirmed on Drive; same-dev30 B0/H1 review complete; new 200-step low-LR trial implemented but NOT run (not Phase 3 complete)
+Plan: H1 recovery200 completed; bounded H2 ROI-V1 alpha2/background1 pilot implemented via quick task 261014-otr; full Phase 3 experimental completion pending
+Status: H1 recovery200 checkpoint, loss/LR log and frozen-dev30 comparison confirmed from Drive. H2 code and existing Recovery notebook are ready locally, but H2 has NOT been run on GPU and Phase 3/4 are not complete.
 Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Notebook Phase 3 và recovery clone/pull `main`; không dùng notebook legacy còn trỏ nhánh `phase2` để lấy bản sửa mới.
-Last activity: 2026-10-13 — Completed quick task 261013-i7u: verified cached rate-quality review, isolated low-LR 200-step helper and CPU-first notebook; 253 CPU tests passed, 2 skipped; live trial pending
+Last activity: 2026-10-14 — Confirmed the completed H1 low-LR 200-step control, implemented H2 with own artifacts and mask preflight in the existing notebook; final CPU suite 299 passed, 2 skipped, then 45 affected tests passed after hardening. Live H2 pilot awaits explicit user action.
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -77,6 +77,7 @@ Progress: [███░░░░░░░] 33%
 - [2026-10-08]: Chốt Xie et al. 2025 chỉ là **literature comparison** (ANLS-09): dùng số công bố với cảnh báo khác dữ liệu/split/giao thức; không viết lại code, không chạy Xie-SGC/Xie-FT, không thêm lượt train hay CU. Tổng trở lại 70 requirement v1.
 - [2026-10-08]: Phase 2 đóng (UAT 5/5, `02-VERIFICATION.md` passed). INFRA-02 (overlay mask) dời sang Phase 4, EVAL-04 (SpeciesNet) dời sang Phase 6 — nên làm sớm, song song Phase 3. Kết quả: `phases/02-*/02-RESULTS.md`; λ pilot H1 đề xuất = 2.
 - [2026-10-13]: Đã xác nhận H1 cũ tới 1.000 bước. Đối chiếu CPU B0 λ2/8/32 và H1 500/1000 trên đúng dev30 với protocol thực cho thấy đánh đổi dung lượng/chất lượng, không chứng minh fine-tuning thất bại toàn diện. Chuẩn bị một lượt thử mới từ trọng số tác giả λ2, optimizer mới, main LR1e-5/aux LR1e-3, tối đa 200 bước, đồng ý theo hash báo cáo; chưa chạy. Giữ nguyên run/config/ảnh cũ, không tự mở rộng hay train H2. Cặp H1/H2 tiếp theo phải cùng nguồn/LR/crop/số bước và chỉ khác ROI weighting.
+- [2026-10-14]: H1 low-LR recovery200 đã chạy xong trên L4, lưu checkpoint/throughput/loss CSV và chấm đúng dev30; cùng 30 ảnh, H1 dùng 0,0053525 bit/pixel và mAP 0,40835 so với B0 λ2 0,0059902 và 0,39439. Đây chỉ là tín hiệu pilot, không phải chứng minh thắng ở cùng bitrate hay kết luận bài báo. H2 ROI-V1 alpha2/background1 dùng cùng nguồn tác giả λ2, optimizer mới, LR/crop/seed/200 bước, chỉ khác trọng số loss; giữ notebook Recovery và tài sản `/content` đang có. Chỉ chấm H2 trên dev30, lấy H1 cache làm đối chứng; không chạy Xie, quét alpha, mở rộng 3.000 bước hay tự đánh dấu phase hoàn tất.
 - [Roadmap]: Sửa số liệu Coverage trong REQUIREMENTS.md — file có 59 requirement v1 có ID cụ thể, không phải 52 như dòng tổng ghi lúc định nghĩa requirements.
 
 ### Pending Todos
@@ -85,8 +86,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- [H1 recovery] 30 ảnh là tín hiệu chọn hướng, không chứng minh thắng đường cong nén hay bài workshop. Chưa kiểm ảnh bị mất phát hiện và log loss/LR cũ tại phiên audit này; chưa xác định LR là nguyên nhân. Lượt thử 200 bước cũng không phải đối chứng cùng số bước với checkpoint cũ 500/1000.
-- [Phase 2→4] INFRA-02: ảnh overlay mask phải có trước lượt train H2 đầu tiên.
+- [H1/H2] 30 ảnh là tín hiệu chọn hướng, không chứng minh thắng đường cong nén hay bài workshop. H1 recovery200 có cùng 6/20 khung dương tính bị bỏ sót như B0 và đã có log loss/LR; chưa xác định riêng tốc độ học là nguyên nhân. So H2 phải dùng đúng H1 recovery200, không lấy H1 cũ 500/1000 làm cặp đối chứng.
+- [H2 GPU gate] Overlay mask từ transform thật, nguồn dữ liệu và hash xác nhận phải được xem/duyệt trong Colab trước lượt train H2 đầu tiên; kiểm thử CPU không thay xác nhận trực quan hay GPU. INFRA-02 chỉ hoàn tất khi gate này được xác nhận trên dữ liệu thật.
 - [Phase 2→6] EVAL-04: chưa có SpeciesNet; baseline phải decode lại để chấm định loài.
 - [Phase 2] Tỉ lệ con vật "ảo" 52–85% của codec CompressAI ở bitrate thấp chưa kiểm bằng mắt / ở ngưỡng 0,5.
 - **Rủi ro sinh tử #1 — rò rỉ dữ liệu theo site/burst**: phải được chặn bằng gate `split_check.py` tự động (DATA-03) ngay từ Phase 1, không phải script chạy tay. Theo dõi tới khi Phase 1 verify xong.
@@ -122,6 +123,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T07:25:12Z
-Stopped at: H1 reached1000; same-dev30 review verified; new recovery notebook ready, live low-LR trial and subsequent controlled H2 review pending
-Resume file: .planning/quick/261013-i7u-audit-cached-h1-rate-quality-tradeoff-an/261013-i7u-SUMMARY.md
+Last session: 2026-10-14T14:17:30Z
+Stopped at: H1 recovery200 evidence confirmed; H2 implementation and in-place notebook ready; publication and live H2 pilot still pending
+Resume file: .planning/quick/261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2/261014-otr-SUMMARY.md

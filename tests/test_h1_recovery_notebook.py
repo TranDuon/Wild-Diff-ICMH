@@ -152,3 +152,34 @@ def test_recovery_wrapper_streams_real_cpu_child_and_raises(tmp_path, capsys, re
     assert capsys.readouterr().out.endswith("review stdout\nreview stderr\n")
     assert "stdout=subprocess.PIPE" in source and "stderr=subprocess.STDOUT" in source
     assert "flush=True" in source
+
+
+def test_h2_continuation_keeps_same_notebook_and_has_no_default_heavy_job():
+    sources = code_cells()
+    continuation = next(source for source in sources if "tools/colab_h2_continuation.py" in source)
+    assert "RUN_TRIAL = False" in continuation and "RUN_EVALUATION = False" in continuation
+    assert "safe_pull()" in continuation and "runpy.run_path" in continuation
+    assert "'REPO': REPO" in continuation and "'DRIVE_ROOT': DRIVE_ROOT" in continuation
+    for forbidden in ("pip", "runtime.unassign", "rmtree", "copyfile", "recovery('train'", "recovery('evaluate'"):
+        assert forbidden not in continuation
+    assert builder().build()["metadata"]["colab"]["name"] == "Wild_Diff_ICMH_H1_Recovery.ipynb"
+
+
+def test_h2_bootstrap_uses_current_kernel_paths_without_side_effects(tmp_path):
+    source = next(source for source in code_cells() if "tools/colab_h2_continuation.py" in source)
+    calls = []
+    class StubRunpy:
+        @staticmethod
+        def run_path(path, **kwargs):
+            calls.append((path, kwargs))
+            return {"controls": "displayed_only"}
+    tree = ast.parse(source)
+    tree.body = [node for node in tree.body if not isinstance(node, ast.Import)]
+    namespace = {"REPO": tmp_path, "DRIVE_ROOT": tmp_path / "drive", "CU_RATE": 1.54,
+                 "safe_pull": lambda: calls.append("safe_pull"), "runpy": StubRunpy,
+                 "RUN_TRIAL": True, "RUN_EVALUATION": True}
+    exec(compile(tree, "same-kernel-bootstrap", "exec"), namespace)
+    assert calls[0] == "safe_pull"
+    assert calls[1][1]["init_globals"]["REPO"] == tmp_path
+    assert calls[1][1]["init_globals"]["DRIVE_ROOT"] == tmp_path / "drive"
+    assert namespace["RUN_TRIAL"] is False and namespace["RUN_EVALUATION"] is False

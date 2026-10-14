@@ -177,7 +177,26 @@ MyDrive/wild_diff_icmh/
   snapshot 500/862 và kết quả cũ; sửa Timer không chứng minh chất lượng tốt hơn.
 - Các kiểm thử CPU xác nhận hành vi resume, không thay cho xác nhận chạy thật trên Colab.
 
-## Compute unit
+## H2 ROI-V1 pilot200 — tiếp tục Recovery trong cùng phiên (14/10/2026)
+
+- Đã có H1 Recovery200 + dev30 thì không train/chấm H1 lại. Thử đúng một H2
+  foreground2/background1, semantic tắt; cùng trọng số tác giả, optimizer mới,
+  LR/data/crop/seed/200 bước như H1. Không dùng H1 đã train làm khởi tạo chỉ riêng
+  H2; mục so sánh đồng-duration này khác các thí nghiệm legacy H2 nêu phía trên.
+- Giữ **Wild_Diff_ICMH_H1_Recovery.ipynb và L4 đang kết nối**, không mở phiên mới
+  hoặc reset. Thêm một cell continuation duy nhất theo [H2_ROI_PILOT.md](docs/H2_ROI_PILOT.md)
+  nếu notebook đã mở trước lúc cập nhật. Pull không thay cell đang mở; lần sửa sau
+  chỉ dùng2A và chạy lại continuation, không copy bản vá mới.
+- Bảng điều khiển mặc định không train/copy/install. Lần lượt chuẩn bị/xem10
+  overlay thật → tick xác nhận đúng hash → train H2 200 → chấm H2 dev30 → đọc
+  trạng thái. Tận dụng local files/env, chỉ chuẩn bị ảnh cần cho mỗi thao tác.
+  Training dùng union train/val; đánh giá chỉ30 originals. Môi trường detector
+  dùng lại `/content/envs/h1-recovery-detect`, không tự dựng mới.
+- H2 có run/checkpoint/CSV riêng. Không chạm H1/B0 artifacts; không chạy Xie,
+  alpha sweep/full-dev/test/extensions. Kết quả30 ảnh là pilot, không phải hoàn
+  tất Phase3/4 hay chứng minh ưu thế nộp báo.
+
+## Compute unit (chi phí toàn phiên)
 
 - Hằng số `COLAB_CU_PER_HOUR = 1.54` trong notebook chỉ để ước lượng. CU thật = chênh lệch
   "Available" trong Colab Resources trước và sau phiên; ghi lại mỗi phiên (Bước 1 và Bước 10
