@@ -31,7 +31,7 @@ Phase: 3 — H1 — Fine-tuning thích ứng miền
 Plan: H1 recovery200 completed; bounded H2 ROI-V1 alpha2/background1 pilot implemented via quick tasks 261014-otr and 261014-twb; full Phase 3 experimental completion pending
 Status: H1 recovery200 checkpoint, loss/LR log and frozen-dev30 comparison confirmed from Drive. The existing Recovery notebook now includes fresh-L4 H2 setup, but H2 has NOT been run on GPU and Phase 3/4 are not complete.
 Nhánh: làm việc trên `main` (đã merge `phase2` ngày 07/10). Notebook Phase 3 và recovery clone/pull `main`; không dùng notebook legacy còn trỏ nhánh `phase2` để lấy bản sửa mới.
-Last activity: 2026-10-14 — Added H2-only dependency and detector setup to the same Recovery notebook for a deleted Colab runtime. The directly affected notebook/dependency suites passed 41 tests after final guidance fixes. Live H2 mask review, train200 and eval30 await explicit user action.
+Last activity: 2026-10-15 — Completed quick task 261015-h2d on branch phase3+4: H2 train now copies train/val originals from Drive on demand (checkpoints-only pre-staging); configs unchanged so the frozen H2 contract stays valid. Live H2 train200/eval30 still await user action.
 
 Kế hoạch duy nhất: khung GSD (`PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/`). `CAMERA_TRAP_FINE_TUNING_PLAN.md` đã xoá ngày 04/10/2026; `COLAB_TRAINING.md` chỉ giữ lưu ý vận hành.
 
@@ -115,6 +115,7 @@ None yet.
 | 261014-otr | H2 ROI-V1 alpha2 pilot200 ghép cặp với H1 recovery200 đã xong; sửa notebook Recovery tại chỗ, preflight mask, H2-only dev30; GPU H2 chưa chạy | 2026-10-14 | c4a0373 | [261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2](./quick/261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2/) |
 | 261014-twb | Chuẩn bị riêng H2 cho runtime L4 mới trong notebook Recovery; không chạy lại H1, H2 GPU vẫn chờ | 2026-10-14 | 70a2956 | [261014-twb-fix-existing-recovery-notebook-for-a-new](./quick/261014-twb-fix-existing-recovery-notebook-for-a-new/) |
 | 261014-w2j | Lọc hộp MegaDetector có diện tích bằng 0 ở H2 ROI preflight; giữ kiểm tra dữ liệu hỏng | 2026-10-15 | dee980c | [261014-w2j-handle-zero-area-megadetector-boxes-in-h](./quick/261014-w2j-handle-zero-area-megadetector-boxes-in-h/) |
+| 261015-h2d | H2 train chép ảnh khi cần (copy-on-demand) thay vì chép trước 8.690 ảnh train/val; nhánh phase3+4 | 2026-10-15 | ba3ecc6 | [261015-h2d-h2-train-copy-on-demand-image-staging](./quick/261015-h2d-h2-train-copy-on-demand-image-staging/) |
 
 ## Deferred Items
 
