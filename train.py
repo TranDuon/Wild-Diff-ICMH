@@ -97,7 +97,11 @@ def _run_data_preflight(config):
 
 
 def _run_asset_preflight(config, rows) -> None:
-    """Fail before allocating the model if images/tag sidecars are incomplete."""
+    """Fail before allocating the model if images/tag sidecars are incomplete.
+
+    When WILD_DATA_SOURCE_ROOT is set (H2 copy-on-demand), every selected image
+    is verified under that source root instead of the still-empty local data_root.
+    """
     overrides = config.data.params.get("dataset_overrides", {})
     data_root = Path(str(overrides.get("data_root")))
     site_id = overrides.get("site_id")
@@ -114,13 +118,18 @@ def _run_asset_preflight(config, rows) -> None:
         selected = [row for row in selected if row.get("split") in asset_splits]
     if not selected:
         raise ValueError(f"preflight selected no rows for site_id={site_id!r}")
+    source_root = os.environ.get("WILD_DATA_SOURCE_ROOT")
+    image_root = Path(source_root) if source_root else data_root
     missing_images = [
         row["relative_path"] for row in selected
-        if not (data_root / row["relative_path"]).is_file()
+        if not (image_root / row["relative_path"]).is_file()
     ]
     if missing_images:
         preview = ", ".join(missing_images[:5])
-        raise FileNotFoundError(f"{len(missing_images)} selected images are missing under {data_root}: {preview}")
+        raise FileNotFoundError(f"{len(missing_images)} selected images are missing under {image_root}: {preview}")
+    if source_root:
+        print(f"Asset preflight: {len(selected)} selected images verified under "
+              f"WILD_DATA_SOURCE_ROOT={source_root}; copied on demand into {data_root}")
 
     tags_path = overrides.get("tags_path")
     if tags_path:
