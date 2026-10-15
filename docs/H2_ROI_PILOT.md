@@ -41,6 +41,14 @@ Không chạy H1 4–8 hoặc các cell train/evaluate lịch sử. Làm tuần 
 2. **Bước 2 — main:** clone hoặc safe-pull `main` vào `REPO`. Pull từ GitHub phải
    thành công và đúng commit mới trước khi setup. Nếu notebook đã mở trước khi
    bản mới được push, reload bản canonical; git pull không sửa cell đang mở.
+   Cho tới khi nhánh `phase3+4` được merge vào `main`, hãy sửa tay cell 2 thành
+   `BRANCH = 'phase3+4'` (file notebook không bị đổi). `safe_pull` chỉ kiểm tra
+   nhánh hiện tại đúng bằng `BRANCH`, không bao giờ tự chuyển nhánh. Trên runtime
+   mới (chưa có `/content/Wild-Diff-ICMH`), cell 2 clone thẳng `phase3+4`. Nếu
+   runtime đã có clone ở `main`, assert sẽ dừng: chỉ khi `git status --porcelain`
+   sạch, chạy `git fetch origin phase3+4` và `git checkout phase3+4` trong
+   `/content/Wild-Diff-ICMH` rồi chạy lại cell 2. Sau khi merge, đặt lại
+   `BRANCH = 'main'`.
 3. **H2-A — cờ setup:** cả `RUN_H2_DEPENDENCIES` và `RUN_H2_DETECTOR` mặc định
    `False`. Đổi riêng cờ dependency thành `True`, chạy H2-A rồi H2-B. Cell H2-B
    kiểm tra đúng L4 trước cài đặt, giữ NumPy/SciPy/Torch/Torchvision, cài closure
@@ -81,10 +89,16 @@ trên. File canonical vẫn là Recovery notebook, không tạo notebook thứ h
 3. **Train H2 tới200:** chỉ H2, giới hạn tổng200 optimizer steps; checkpoint mới
    nằm ở `runs/h2_roi_v1_alpha2_ls512/lambda_2/`. Phiên bị ngắt thì bấm lại Train
    để tiếp tục checkpoint H2 đúng hợp đồng, không học từ đầu hay dùng H1 optimizer.
-   Đủ200 thì không train thêm. Training chuẩn bị đúng union train/val, bỏ qua
-   ảnh/checkpoint local đã đủ. Chỉ stage ảnh gốc thuộc train/val cùng checkpoint
-   tác giả lambda2 và SD2.1; không stage ảnh test hay toàn bộ corpus. Không đổi
-   Torch/NumPy hoặc dựng lại detector.
+   Đủ200 thì không train thêm. Train **không còn** sao chép trước toàn bộ 8.690
+   ảnh gốc train/val: trước khi chạy chỉ stage checkpoint SD2.1 và lambda2 tác
+   giả. Preflight của `train.py` vẫn kiểm tra mọi ảnh gốc train/val tồn tại trên
+   Drive (`DRIVE_ROOT/images`) và dừng nếu thiếu. Sau đó dataloader chép từng ảnh
+   gốc vào `/content/data/wild_diff_icmh/images` ở lần đọc đầu tiên (khoảng 1.600
+   ảnh train + vài batch val cho 200 steps), dùng lại file đã có local. Manifest,
+   sampler, seed và crop giữ nguyên nên H2 vẫn ghép cặp với H1. Log có dòng
+   `Images: copy-on-demand ...`; lần đọc đầu của mỗi ảnh gồm độ trễ Drive nên
+   `throughput.json` của lần chạy này có tính cả thời gian chép. Không stage ảnh
+   test hay toàn bộ corpus. Không đổi Torch/NumPy hoặc dựng lại detector.
 4. **Chấm H2 30 ảnh:** chỉ khi đủ200, giải mã đúng DDIM50/seed231/hướng dẫn3/cạnh
    dài512, chấm ở kích thước ảnh gốc. Chỉ chép ảnh gốc của frozen dev30 còn
    thiếu, dùng môi trường
