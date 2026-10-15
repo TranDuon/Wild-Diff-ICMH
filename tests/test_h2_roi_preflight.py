@@ -17,6 +17,25 @@ def write_jsonl(path, rows):
     return path
 
 
+def write_selection_evidence(tmp_path, image_id, detections):
+    manifest = write_jsonl(tmp_path / "manifest.jsonl", [{
+        "image_id": image_id,
+        "relative_path": f"snapshot_kgalagadi/{image_id.split(':')[-1]}.png",
+        "split": "train",
+        "width": 512,
+        "height": 400,
+    }])
+    detection_path = write_jsonl(tmp_path / "detections.jsonl", [{
+        "image_id": image_id,
+        "detections": detections,
+    }])
+    illumination = write_jsonl(tmp_path / "illumination.jsonl", [{
+        "image_id": image_id,
+        "illumination": "day",
+    }])
+    return manifest, detection_path, illumination
+
+
 @pytest.fixture
 def inputs(tmp_path):
     images = tmp_path / "local_images"
@@ -80,6 +99,83 @@ def test_selection_spans_real_cases_and_missing_detection_is_not_empty(inputs):
     write_jsonl(inputs["detections"], detections[:-1])
     with pytest.raises(ValueError, match="Missing detection record"):
         surface.select_overlay_cases(inputs["manifest"], inputs["detections"], inputs["illumination"])
+
+
+def test_detections_discards_finite_degenerate_boxes_but_keeps_valid_boxes(tmp_path):
+    image_id = "KGA:mixed"
+    valid = {"category": "1", "conf": 0.9, "bbox": [0.1, 0.2, 0.4, 0.3]}
+    zero_width = {"category": "1", "conf": 0.8, "bbox": [0.2, 0.2, 0.0, 0.3]}
+    negative_height = {"category": "1", "conf": 0.7, "bbox": [0.2, 0.2, 0.3, -0.1]}
+    manifest, detections, illumination = write_selection_evidence(
+        tmp_path, image_id, [zero_width, valid, negative_height]
+    )
+
+    assert surface._detections(detections) == {image_id: [valid]}
+    selected = surface.select_overlay_cases(manifest, detections, illumination, limit=1)
+    assert [(row["image_id"], row["overlay_kind"]) for row in selected] == [
+        (image_id, "ordinary")
+    ]
+
+
+def test_all_finite_degenerate_boxes_normalize_to_present_empty_frame(tmp_path):
+    image_id = "KGA:degenerate"
+    boxes = [
+        {"category": "1", "conf": 0.9, "bbox": [0.1, 0.1, 0.0, 0.2]},
+        {"category": "1", "conf": 0.9, "bbox": [0.1, 0.1, -0.1, 0.2]},
+        {"category": "1", "conf": 0.9, "bbox": [0.1, 0.1, 0.2, 0.0]},
+        {"category": "1", "conf": 0.9, "bbox": [0.1, 0.1, 0.2, -0.1]},
+    ]
+    manifest, detections, illumination = write_selection_evidence(
+        tmp_path, image_id, boxes
+    )
+
+    normalized = surface._detections(detections)
+    assert image_id in normalized
+    assert normalized[image_id] == []
+    selected = surface.select_overlay_cases(manifest, detections, illumination, limit=1)
+    assert [(row["image_id"], row["overlay_kind"]) for row in selected] == [
+        (image_id, "empty")
+    ]
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [{"image_id": "KGA:bad", "detections": [
+            {"category": "1", "conf": 0.9, "bbox": [0.1, 0.1, 0.2]}
+        ]}],
+        [{"image_id": "KGA:bad", "detections": [
+            {"category": "1", "conf": 0.9, "bbox": [0.1, "bad", 0.0, 0.2]}
+        ]}],
+        [{"image_id": "KGA:bad", "detections": [
+            {"category": "1", "conf": 0.9, "bbox": [0.1, "nan", 0.0, 0.2]}
+        ]}],
+        [{"image_id": "KGA:bad", "detections": [
+            {"category": "1", "conf": "inf", "bbox": [0.1, 0.1, 0.0, 0.2]}
+        ]}],
+        [{"image_id": "KGA:bad", "detections": {}}],
+        [["not", "a", "record"]],
+        [
+            {"image_id": "KGA:duplicate", "detections": []},
+            {"image_id": "KGA:duplicate", "detections": []},
+        ],
+        [{"detections": []}],
+    ],
+    ids=[
+        "coordinate-shape",
+        "nonnumeric-after-zero-width",
+        "nonfinite-coordinate-after-zero-width",
+        "nonfinite-confidence-after-zero-width",
+        "non-list-container",
+        "non-record",
+        "duplicate-id",
+        "missing-id",
+    ],
+)
+def test_detections_rejects_corrupt_evidence(tmp_path, rows):
+    detections = write_jsonl(tmp_path / "detections.jsonl", rows)
+    with pytest.raises(ValueError):
+        surface._detections(detections)
 
 
 def test_real_dataset_overlay_preserves_rng_and_is_frozen(inputs, monkeypatch):

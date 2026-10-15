@@ -128,15 +128,22 @@ def _detections(path):
         boxes = row.get("boxes", row.get("detections"))
         if not key or not isinstance(boxes, list) or str(key) in result:
             raise ValueError("Missing/duplicate ID or missing detection list in evidence")
+        normalized_boxes = []
         for box in boxes:
             coordinates = box.get("bbox_xywh", box.get("bbox")) if isinstance(box, dict) else None
             if not isinstance(coordinates, (list, tuple)) or len(coordinates) != 4:
                 raise ValueError(f"Malformed box for {key}")
-            values = [float(value) for value in coordinates]
-            confidence = float(box.get("conf", box.get("confidence", box.get("score", 1.0))))
-            if not all(math.isfinite(value) for value in [*values, confidence]) or values[2] <= 0 or values[3] <= 0:
-                raise ValueError(f"Non-finite/degenerate box for {key}")
-        result[str(key)] = boxes
+            try:
+                values = [float(value) for value in coordinates]
+                confidence = float(box.get("conf", box.get("confidence", box.get("score", 1.0))))
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"Non-numeric box for {key}") from exc
+            if not all(math.isfinite(value) for value in [*values, confidence]):
+                raise ValueError(f"Non-finite box for {key}")
+            if values[2] <= 0 or values[3] <= 0:
+                continue
+            normalized_boxes.append(box)
+        result[str(key)] = normalized_boxes
     return result
 
 
