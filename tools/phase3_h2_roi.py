@@ -284,9 +284,15 @@ def checkpoint_step(path, identity, run):
 
 def _stage(p, scope):
     from tools.h2_roi_preflight import stage_assets
+    if scope == "train":
+        # Train/val originals are copied on demand by the dataloader
+        # (WILD_DATA_SOURCE_ROOT); only the two fixed checkpoints are staged.
+        print("Stage train: checkpoints only; train/val originals are copied on demand by the dataloader.", flush=True)
+        return stage_assets(p["root"], p["images"], [], include_checkpoints=True,
+                            checkpoint_root=p["checkpoints"])
     rows = old.read_jsonl(REPO / old.MANIFEST)
     selected = set(old.ids(p["quick"]))
-    rows = [r for r in rows if (r.get("split") in {"train", "val"} if scope == "train" else r["image_id"] in selected)]
+    rows = [r for r in rows if r["image_id"] in selected]
     print(f"Stage {scope}: {len(rows)} required originals; skip valid existing files.", flush=True)
     return stage_assets(p["root"], p["images"], [r["relative_path"] for r in rows],
                         include_checkpoints=True, checkpoint_root=p["checkpoints"])
@@ -344,7 +350,9 @@ def train(p, hours, rate, *, enabled=False, acknowledgement=""):
                "lightning.trainer.max_steps=200", f"lightning.trainer.max_time={duration}"]
     command.extend(["--resume", str(last)] if last.is_file() else ["--init-checkpoint", str(author)])
     print(f"ONE paired H2: {step} → 200, alpha2/background1 guide-only; same authored weights, not H1 continuation.", flush=True)
-    run_logged(command, p, "h2_roi_v1_alpha2_train_200", rate)
+    print(f"Images: copy-on-demand from {p['root'] / 'images'} -> {p['images']} "
+          "(same manifest/sampler/seed; ~1,600 train + few val reads for 200 steps, not 8,690)", flush=True)
+    run_logged(command, dict(p, source_images=p["root"] / "images"), "h2_roi_v1_alpha2_train_200", rate)
     step = checkpoint_step(last, identity, p["run"])
     print(f"H2 checkpoint {step}/200. " + ("Evaluation is a separate explicit action." if step == 200 else "Rerun train to resume ONLY H2."), flush=True)
 

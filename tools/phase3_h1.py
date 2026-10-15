@@ -116,6 +116,11 @@ def command_env(p):
                KGA_DETECTIONS=str(p["detections"]), BPP_WEIGHT="2", WILD_RUN_DIR=str(p["run"]),
                PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
     env.pop("KGA_SITE_ID", None)
+    # Copy-on-demand is opt-in per launch (H2 train only); H1, recovery and
+    # evaluate subprocesses never inherit it from the notebook process.
+    env.pop("WILD_DATA_SOURCE_ROOT", None)
+    if p.get("source_images"):
+        env["WILD_DATA_SOURCE_ROOT"] = str(p["source_images"])
     return env
 
 

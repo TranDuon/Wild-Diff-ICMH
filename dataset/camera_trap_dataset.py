@@ -6,10 +6,13 @@ flip can never silently desynchronise the animal mask from the image.
 from __future__ import annotations
 
 import json
+import os
 import random
+import shutil
+import tempfile
 import time
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -18,6 +21,61 @@ import torch.utils.data as data
 
 from utils.illumination import apply_sidecar, load_sidecar
 from utils.image_geometry import resize_for_processing, scale_boxes
+
+
+# Opt-in copy-on-demand: when set, originals missing under ``data_root`` are
+# copied from this root (e.g. Drive) the first time they are read. Unset keeps
+# the legacy behaviour of reading only from ``data_root``.
+SOURCE_ROOT_ENV = "WILD_DATA_SOURCE_ROOT"
+
+
+def _contained_path(root: Path, relative: str) -> Path:
+    """Resolve a portable manifest-relative path strictly inside ``root``."""
+    resolved_root = Path(root).resolve()
+    value = str(relative).replace("\\", "/")
+    part = PurePosixPath(value)
+    if not value or part.is_absolute() or any(p in {"..", "."} for p in value.split("/")) or ":" in value:
+        raise ValueError(f"Unsafe relative image path: {relative!r}")
+    target = (resolved_root / Path(*part.parts)).resolve()
+    if target == resolved_root or not target.is_relative_to(resolved_root):
+        raise ValueError(f"Image path escapes its root: {relative!r}")
+    return target
+
+
+def _copy_on_demand(source_root: Path, data_root: Path, relative: str) -> Path:
+    """Return the local path of ``relative``, copying it from ``source_root`` if absent.
+
+    An existing local file is reused without touching the source. The copy goes
+    through a unique ``.partial-<pid>-`` temp file in the target directory, is
+    size-checked and atomically renamed, so concurrent DataLoader workers and
+    interrupted copies never expose a truncated image. No global RNG is used.
+    """
+    target = _contained_path(data_root, relative)
+    if target.is_file():
+        return target
+    source = _contained_path(source_root, relative)
+    if not source.is_file() or source.stat().st_size == 0:
+        raise FileNotFoundError(f"image missing locally and in {SOURCE_ROOT_ENV}: {source}")
+    size = source.stat().st_size
+    target.parent.mkdir(parents=True, exist_ok=True)
+    last_error: Optional[BaseException] = None
+    for attempt in range(3):
+        fd, temporary = tempfile.mkstemp(prefix=f"{target.name}.partial-{os.getpid()}-", dir=target.parent)
+        os.close(fd)
+        try:
+            shutil.copyfile(source, temporary)
+            if Path(temporary).stat().st_size != size:
+                raise OSError(f"incomplete copy: {source}")
+            os.replace(temporary, target)
+            return target
+        except OSError as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.25 * (attempt + 1))
+        finally:
+            if Path(temporary).exists():
+                Path(temporary).unlink()
+    raise OSError(f"failed to copy image {source} -> {target}: {last_error}")
 
 
 def _load_jsonl(path: Path) -> List[dict]:
@@ -219,6 +277,10 @@ class CameraTrapDataset(data.Dataset):
 
         self.manifest_path = Path(manifest_path)
         self.data_root = Path(data_root)
+        source_value = os.environ.get(SOURCE_ROOT_ENV) or None
+        self.source_root = Path(source_value) if source_value else None
+        if self.source_root is not None and not self.source_root.is_dir():
+            raise FileNotFoundError(f"{SOURCE_ROOT_ENV} is not a directory: {source_value}")
         self.split = split
         self.out_size = int(out_size)
         self.crop_type = crop_type
@@ -337,6 +399,8 @@ class CameraTrapDataset(data.Dataset):
     def __getitem__(self, index: int) -> Dict[str, object]:
         row = self.rows[index]
         image_path = self.data_root / Path(row["relative_path"])
+        if self.source_root is not None:
+            image_path = _copy_on_demand(self.source_root, self.data_root, row["relative_path"])
         image = self._open_image(image_path)
         boxes = self._boxes_for(row, *image.size)
         resized = resize_for_processing(image, self.processing_long_side)

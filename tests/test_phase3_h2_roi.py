@@ -159,7 +159,7 @@ def test_acknowledgement_requires_unchanged_sources_and_overlays(evidence, monke
         api.validate_acknowledgement(p, ack, enabled=True)
 
 
-def test_new_training_uses_author_weights_only_capped_and_reuses_staging(evidence, monkeypatch):
+def test_new_training_uses_author_weights_only_capped_and_reuses_staging(evidence, monkeypatch, capsys):
     p, report, ack = acknowledged(evidence, monkeypatch)
     author = p["checkpoints"] / api.AUTHOR_RELATIVE
     author.parent.mkdir(parents=True)
@@ -167,18 +167,93 @@ def test_new_training_uses_author_weights_only_capped_and_reuses_staging(evidenc
     monkeypatch.setattr(api, "AUTHOR_SHA", api.digest(author))
     # Existing report source remains bound; replace only the ack gate fixture.
     monkeypatch.setattr(api, "validate_acknowledgement", lambda *a, **k: report)
-    commands, staged = [], []
+    commands, staged, launched = [], [], []
     monkeypatch.setattr(api, "_require_environment", lambda **k: None)
     monkeypatch.setattr(api, "_stage", lambda p, scope: staged.append(scope))
-    monkeypatch.setattr(api, "run_logged", lambda command, *a: commands.append([str(x) for x in command]))
+
+    def fake_run(command, launch_p, *a):
+        commands.append([str(x) for x in command])
+        launched.append(launch_p)
+    monkeypatch.setattr(api, "run_logged", fake_run)
     monkeypatch.setattr(api, "checkpoint_step", lambda *a: 200)
     api.train(p, .5, 1.54, enabled=True, acknowledgement=ack)
     assert staged == ["train"]
+    env = api.old.command_env(launched[0])
+    assert env["WILD_DATA_SOURCE_ROOT"] == str(p["root"] / "images")
+    assert env["WILD_DATA_ROOT"] == str(p["images"])
+    assert "copy-on-demand" in capsys.readouterr().out
+    contract = json.loads((p["run"] / "experiment_contract.json").read_text())
+    assert contract == api._experiment_contract(p, report, ack)
+    assert set(contract) == {"schema_version", "experiment", "target_steps", "preflight_sha256", "source",
+                             "source_sha256", "optimizer_lrs", "roi", "initialization", "author_relative",
+                             "author_sha256", "config_chain_sha256"}
     assert "--init-checkpoint" in commands[0] and "--resume" not in commands[0]
     assert "lightning.trainer.max_steps=200" in commands[0]
     assert api.CONFIG in commands[0]
     own = json.loads((p["run"] / "experiment_contract.json").read_text())
     assert own["source"]["control_contract_sha256"] == api.CONTROL_CONTRACT_SHA
+
+
+def test_command_env_strips_inherited_source_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("WILD_DATA_SOURCE_ROOT", "/elsewhere")
+    p = api.paths(tmp_path)
+    assert "WILD_DATA_SOURCE_ROOT" not in api.old.command_env(p)
+    assert "source_images" not in p
+
+
+def test_stage_train_is_checkpoint_only_and_evaluate_unchanged(evidence, monkeypatch):
+    p, selected, *_ = evidence
+    calls = []
+    from tools import h2_roi_preflight
+    monkeypatch.setattr(h2_roi_preflight, "stage_assets", lambda *a, **k: calls.append((a, k)) or {})
+    api._stage(p, "train")
+    api._stage(p, "evaluate")
+    (train_args, train_kwargs), (eval_args, eval_kwargs) = calls
+    assert train_args == (p["root"], p["images"], [])
+    assert eval_args == (p["root"], p["images"], [f"snapshot_kgalagadi/{i}.JPG" for i in selected])
+    for kwargs in (train_kwargs, eval_kwargs):
+        assert kwargs == {"include_checkpoints": True, "checkpoint_root": p["checkpoints"]}
+
+
+def test_h2_train_launch_copies_only_requested_image_end_to_end(
+        evidence, monkeypatch, camera_trap_dataset_module):
+    """Tracer: runner -> checkpoint-only staging -> env -> dataset copies one image."""
+    from PIL import Image
+    p, report, ack = acknowledged(evidence, monkeypatch)
+    from tools.h2_roi_preflight import CHECKPOINT_RELATIVES
+    for relative in CHECKPOINT_RELATIVES:
+        target = p["root"] / "checkpoints" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"checkpoint " + relative.encode())
+    monkeypatch.setattr(api, "AUTHOR_SHA", api.digest(p["root"] / "checkpoints" / api.AUTHOR_RELATIVE))
+    monkeypatch.setattr(api, "validate_acknowledgement", lambda *a, **k: report)
+    monkeypatch.setattr(api, "_require_environment", lambda **k: None)
+    monkeypatch.setattr(api, "checkpoint_step", lambda *a: 200)
+    launched = []
+    monkeypatch.setattr(api, "run_logged", lambda command, launch_p, *a: launched.append(launch_p))
+    drive_dir = p["root"] / "images" / "snapshot_kgalagadi"
+    drive_dir.mkdir(parents=True)
+    relatives = ["snapshot_kgalagadi/a.jpg", "snapshot_kgalagadi/b.jpg"]
+    for relative, color in zip(relatives, ((200, 10, 10), (10, 200, 10))):
+        Image.new("RGB", (64, 48), color).save(p["root"] / "images" / relative, "JPEG")
+
+    api.train(p, .5, 1.54, enabled=True, acknowledgement=ack)
+
+    for relative in CHECKPOINT_RELATIVES:
+        assert (p["checkpoints"] / relative).is_file()
+    assert not p["images"].exists() or not list(p["images"].rglob("*.jpg"))
+    env = api.old.command_env(launched[0])
+    monkeypatch.setenv("WILD_DATA_SOURCE_ROOT", env["WILD_DATA_SOURCE_ROOT"])
+    manifest = p["root"] / "manifest.jsonl"
+    jsonl(manifest, [{"image_id": f"KGA:{n}", "split": "train", "relative_path": r,
+                      "site_id": "KGA:A01", "sequence_id": "KGA:S1"} for n, r in zip("ab", relatives)])
+    dataset = camera_trap_dataset_module.CameraTrapDataset(
+        str(manifest), env["WILD_DATA_ROOT"], "train", out_size=16, crop_type="center", use_hflip=False)
+    dataset[0]
+    local = Path(env["WILD_DATA_ROOT"])
+    assert (local / relatives[0]).read_bytes() == (p["root"] / "images" / relatives[0]).read_bytes()
+    assert not (local / relatives[1]).exists()
+    assert not list(local.rglob("*.partial-*"))
 
 
 def test_nonempty_orphan_run_is_not_adopted(evidence, monkeypatch):
