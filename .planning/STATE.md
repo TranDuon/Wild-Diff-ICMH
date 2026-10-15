@@ -114,6 +114,7 @@ None yet.
 | 261013-i7u | Audit B0/H1 cùng dev30 từ cache Drive; notebook CPU-first + run low-LR 200 bước riêng, hash consent, loss CSV; 253 CPU tests passed, chưa chạy trial GPU | 2026-10-13 | 687e660 | [261013-i7u-audit-cached-h1-rate-quality-tradeoff-an](./quick/261013-i7u-audit-cached-h1-rate-quality-tradeoff-an/) |
 | 261014-otr | H2 ROI-V1 alpha2 pilot200 ghép cặp với H1 recovery200 đã xong; sửa notebook Recovery tại chỗ, preflight mask, H2-only dev30; GPU H2 chưa chạy | 2026-10-14 | c4a0373 | [261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2](./quick/261014-otr-build-one-paired-h2-roi-v1-alpha2-pilot2/) |
 | 261014-twb | Chuẩn bị riêng H2 cho runtime L4 mới trong notebook Recovery; không chạy lại H1, H2 GPU vẫn chờ | 2026-10-14 | 70a2956 | [261014-twb-fix-existing-recovery-notebook-for-a-new](./quick/261014-twb-fix-existing-recovery-notebook-for-a-new/) |
+| 261014-w2j | Lọc hộp MegaDetector có diện tích bằng 0 ở H2 ROI preflight; giữ kiểm tra dữ liệu hỏng | 2026-10-15 | dee980c | [261014-w2j-handle-zero-area-megadetector-boxes-in-h](./quick/261014-w2j-handle-zero-area-megadetector-boxes-in-h/) |
 
 ## Deferred Items
 
